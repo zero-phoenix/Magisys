@@ -636,139 +636,22 @@ CASPER_TOOLS = {"read_file", "list_dir", "grep", "glob", "run_tests",
                 # decide es también el que responde por lo que entrega.
                 "write_file", "build_project_exe", "undo"}
 
-# ---------------------------------------------------------------------------
-# Dominios de herramientas (§2.2).
-#
-# El catálogo entra ENTERO en cada prompt de cada agente. Con 30 herramientas
-# pasó de 3200 caracteres, y compactar las descripciones ya no daba más de sí.
-# La respuesta correcta no es recortar texto: es no ofrecer el toolchain de
-# ingeniería inversa a quien está escribiendo un informe, ni el compositor de
-# manga a quien depura un dynarec.
-# ---------------------------------------------------------------------------
-
-CORE_TOOLS = {
-    "read_file", "write_file", "edit_file", "delete_path", "list_dir", "grep",
-    "glob", "run_command", "python_exec", "run_tests", "web_fetch", "undo",
-}
-
-# Herramientas de repositorio y publicación.
-#
-# Estaban en CORE_TOOLS, o sea en el prompt de TODOS los dominios, y eso puso
-# rojo a test_catalog_stays_within_a_free_provider_window: el catálogo de
-# reverse/MELCHIOR llegó a 2782 caracteres con el techo en 2700.
-#
-# El propio test dice qué hacer cuando salta: "reducir PARÁMETROS o afinar el
-# dominio, no reescribir textos". Afinar el dominio es lo correcto aquí, y no
-# solo por el número: quien está portando un dynarec de PSP a Vita no necesita
-# `gh workflow run` ni `build_exe` en su prompt. Son herramientas de otra
-# tarea, y ofrecerlas es ruido que empuja al modelo a usarlas.
-DEVOPS_TOOLS = {
-    "git", "gh", "build_exe", "build_project_exe", "create_venv",
-}
-
-REVERSE_TOOLS = {
-    "binary_identify", "console_profile", "disassemble", "binary_strings",
-    "emulate_code", "differential_test", "compare_consoles", "analyze_port",
-    "suggest_port_base", "re_toolchain_status", "index_emulator",
-    "locate_subsystem", "compare_emulators", "binary_entropy",
-}
-
-STUDIO_TOOLS = {
-    "observe_artifact", "inspect_image", "studio_backends",
-    "compose_manga_page", "validate_manga_layout",
-    "render_animatic", "record_program",
-}
-
-WORLD_TOOLS = {
-    "macro_snapshot", "fred_series", "compare_countries", "news_headlines",
-    "company_fundamentals", "owner_earnings", "dcf_valuation",
-    "quality_checklist", "record_thesis", "resolve_thesis",
-    "calibration_report",
-}
-
-_DOMAIN_HINTS = {
-    # Repositorio y publicación. Sin estas pistas, `git` y `gh` quedarían
-    # inalcanzables cuando se los pide por su nombre — el mismo fallo que
-    # tuvo "gasto militar" en el dominio del mundo.
-    "devops": (
-        "git", "commit", "rama", "branch", "push", "pull", "merge",
-        "repositorio", "repo", "github", "actions", "workflow", "runner",
-        "ci", "release", "publicar", "tag", "etiqueta", "compilar",
-        "compila", "build", "ejecutable", ".exe", "pyinstaller", "venv",
-        "entorno virtual", "despliegue", "desplegar", "versión", "version",
-    ),
-    "reverse": (
-        "binario", "firmware", "rom", "emulador", "emular", "desensambl",
-        "dynarec", "ensamblador", "ingenieria inversa", "ingeniería inversa",
-        "psp", "vita", "nintendo", "gba", "nds", "n64", "playstation",
-        "mips", "arm", "opcode", "instruccion", "instrucción", "elf", "dump",
-        "decompil", "portar", "port ", "consola",
-    ),
-    "studio": (
-        "juego", "videojuego", "manga", "cómic", "comic", "viñeta", "vineta",
-        "imagen", "dibujo", "documento", "informe", "pdf", "docx", "vídeo",
-        "video", "pantalla", "captura", "sprite", "render",
-    ),
-    # Estas pistas se comprueban en tests/test_wiring.py contra frases escritas
-    # como se pregunta de verdad, no como me salió a mí al redactar la lista.
-    # Así apareció que "gasto militar" —un indicador que el módulo SÍ ofrece—
-    # no activaba el dominio: la herramienta existía y era inalcanzable.
-    "world": (
-        "macro", "economia", "economía", "inflacion", "inflación", "pib",
-        "tipos de interes", "tipos de interés", "bono", "curva", "paro",
-        "desempleo", "geopolit", "geopolít", "mercado", "bolsa", "accion",
-        "acción", "acciones", "invertir", "inversion", "inversión", "valorar",
-        "valoracion", "valoración", "empresa", "cotizada", "balance",
-        "beneficio", "dividendo", "buffett", "dcf", "flujo de caja",
-        "fundamentales", "actualidad", "noticia", "banco central", "fed",
-        "bce", "reserva federal", "deuda", "divisa", "tipo de cambio",
-        "tesis", "calibrac", "prediccion", "predicción", "pronostico",
-        "pronóstico",
-        # Indicadores del Banco Mundial: sin estas, el catálogo los ofrece y
-        # el enrutado no llega a ellos.
-        "militar", "armament", "poblacion", "población", "demograf",
-        "exportacion", "exportación", "comercio", "arancel", "sancion",
-        "sanción", "banco mundial", "per capita", "per cápita",
-        "esperanza de vida", "renovable", "pais", "país", "paises", "países",
-    ),
-}
-
-
-# Los dominios y sus conjuntos de herramientas, DERIVADOS de _DOMAIN_HINTS.
-#
-# Estaban escritos a mano como {"core", "reverse", "studio"} en dos sitios.
-# Al añadir el dominio del mundo (§6) las dos copias quedaron desfasadas a la
-# vez, y el síntoma habría sido silencioso: `domains_for("")` devolvía un
-# conjunto que ya no era "todos", así que la rama de "sin pista, ofrécelo
-# todo" empezaba a recortar el catálogo sin que nadie lo pidiera.
-#
-# Es la misma clase de fallo que la lista de andamiaje de test_wiring.py: una
-# lista mantenida a mano que se desincroniza de la realidad. Si se deriva, no
-# puede desincronizarse.
-_DOMAIN_TOOLSETS: dict[str, set[str]] = {
-    "devops": DEVOPS_TOOLS,
-    "reverse": REVERSE_TOOLS,
-    "studio": STUDIO_TOOLS,
-    "world": WORLD_TOOLS,
-}
-ALL_DOMAINS: set[str] = {"core"} | set(_DOMAIN_HINTS)
-
-
-def domains_for(task_hint: str) -> set[str]:
-    """
-    Qué dominios de herramientas necesita una tarea.
-
-    Sin pista, se ofrecen todos: es preferible un catálogo grande a que el
-    agente no pueda hacer su trabajo por una heurística demasiado estrecha.
-    """
-    hint = (task_hint or "").lower()
-    if not hint.strip():
-        return set(ALL_DOMAINS)
-    found = {"core"}
-    for domain, needles in _DOMAIN_HINTS.items():
-        if any(n in hint for n in needles):
-            found.add(domain)
-    return found
+# Los dominios de herramientas viven en `dominios.py` desde el 13-sep-2026:
+# este fichero iba 839/800 tras repartir las herramientas que estaban fuera de
+# toda caja, y el techo no se sube. Se reexportan porque media suite y varios
+# módulos los importan desde aquí, y mover el import de todos ellos en el mismo
+# commit habría mezclado dos cambios.
+from .dominios import (  # noqa: F401
+    ALL_DOMAINS,
+    CORE_TOOLS,
+    DEVOPS_TOOLS,
+    REVERSE_TOOLS,
+    STUDIO_TOOLS,
+    WORLD_TOOLS,
+    _DOMAIN_HINTS,
+    _DOMAIN_TOOLSETS,
+    domains_for,
+)
 
 
 def registry_for_role(role: str, task_hint: str = "") -> ToolRegistry:
