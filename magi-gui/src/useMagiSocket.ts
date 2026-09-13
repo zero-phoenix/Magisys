@@ -103,6 +103,14 @@ export function useMagiSocket(port: number = 20128) {
                 // §7.4 — el contexto que hace posible decidir: qué ficheros,
                 // qué había antes, y si los tests pasaron.
                 useMagiStore.getState().setApproval(payload);
+                // Y AVISAR de que le toca a él. Esta linea faltaba: nadie ponia
+                // `awaitingApproval` a true en toda la interfaz —solo a false, al
+                // decidir—, asi que el banner de aprobacion y la apertura
+                // automatica del cajon dependian de un flag que nunca se
+                // encendia. El enjambre se paraba a esperar y la interfaz no lo
+                // decia de ninguna forma. La v5.21.1 puso el aviso; se quedo sin
+                // conectar, igual que F2-F5 en el backend.
+                useMagiStore.getState().setAwaitingApproval(true);
               } else if (topic === 'swarm.routed') {
                 useMagiStore.getState().setRoute(payload);
               } else if (topic === 'agent.delta_end') {
