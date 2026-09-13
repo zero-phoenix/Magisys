@@ -8,7 +8,8 @@ mapea el cableado por topics entre `magi-gui/src` y `magi/`.
 | Comandos conectados (UI → handler) | 20 |
 | Eventos conectados (backend → UI) | 26 |
 | Sin nadie al otro lado | 0 |
-| Capacidades invisibles | 25 |
+| Capacidades invisibles | 12 |
+| Se ven por otro canal | 13 |
 
 ## Comandos conectados
 
@@ -74,31 +75,36 @@ _la UI los nombra y el backend ni los emite ni los atiende_
 
 ## Capacidades invisibles
 
-_trabajo que se hace y ningún panel muestra_
+_trabajo que se hace y el usuario NO ve por ningún canal_
 
 - `agent.done`
-- `agent.slow_iteration`
 - `agent.thought`
-- `agent.timeout`
 - `agent.turn_done`
-- `error.critical`
 - `knowledge.recorded`
 - `memgraph.status`
-- `naoko.diagnostico`
-- `naoko.trace`
-- `naoko.user_message`
 - `ritsuko.user_message`
-- `ritsuko.veto_de_deriva`
 - `rpc.hello`
 - `rpc.policy.check`
 - `sonda.actualizada`
+- `swarm.ronda`
+- `sys.terminal.out`
+- `system.started`
+
+## Se ven por otro canal
+
+_la UI no los nombra, pero salen junto a un TERMINAL_OUT o a un log de panel: el usuario se entera igual_
+
+- `agent.slow_iteration`
+- `agent.timeout`
+- `error.critical`
+- `naoko.diagnostico`
+- `naoko.trace`
+- `naoko.user_message`
+- `ritsuko.veto_de_deriva`
 - `swarm.artefacto_listo`
 - `swarm.budget_exhausted`
 - `swarm.entrada_encolada`
 - `swarm.entrega_incompleta`
-- `swarm.ronda`
 - `swarm.task_completed`
 - `swarm.verificacion_agotada`
-- `sys.terminal.out`
-- `system.started`
 

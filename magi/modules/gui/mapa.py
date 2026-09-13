@@ -144,6 +144,10 @@ class Mapa:
     interfaz: set[str] = field(default_factory=set)
     emitidos: set[str] = field(default_factory=set)
     atendidos: set[str] = field(default_factory=set)
+    #: Topics que la UI no nombra pero que salen JUNTO a un canal visible.
+    #: Sin esta distinción, el mapa contaba como invisible todo lo que la UI
+    #: no nombrara por su nombre — y el usuario los veía igual.
+    acompanados: set[str] = field(default_factory=set)
 
     @property
     def backend(self) -> set[str]:
@@ -161,8 +165,20 @@ class Mapa:
 
     @property
     def capacidades_invisibles(self) -> set[str]:
-        """El backend lo emite o lo atiende y la UI no lo nombra."""
-        return self.backend - self.interfaz
+        """
+        Lo que el backend hace y el usuario NO ve por ningún canal.
+
+        Antes era `backend - interfaz` a secas: contaba como invisible todo
+        topic que la UI no nombrara. Medido el 13-sep-2026 sobre los 25 que
+        declaraba, **13 salían acompañados de un `TERMINAL_OUT` o de un log de
+        panel en el mismo sitio**, así que el usuario se enteraba igual. El
+        indicador decía 25 donde había 12.
+
+        Importa porque este documento se usa para decidir en qué trabajar: un
+        indicador que exagera manda a arreglar lo que no está roto, que es la
+        misma clase de error que un pendiente falso en un megaplan.
+        """
+        return self.backend - self.interfaz - self.acompanados
 
     @property
     def comandos_conectados(self) -> set[str]:
@@ -186,6 +202,7 @@ class Mapa:
              f"| Eventos conectados (backend → UI) | {len(self.eventos_conectados)} |",
              f"| Sin nadie al otro lado | {len(self.paneles_muertos)} |",
              f"| Capacidades invisibles | {len(self.capacidades_invisibles)} |",
+             f"| Se ven por otro canal | {len(self.acompanados)} |",
              ""]
         for titulo, conjunto, nota in (
             ("Comandos conectados", self.comandos_conectados,
@@ -195,7 +212,10 @@ class Mapa:
             ("Sin nadie al otro lado", self.paneles_muertos,
              "la UI los nombra y el backend ni los emite ni los atiende"),
             ("Capacidades invisibles", self.capacidades_invisibles,
-             "trabajo que se hace y ningún panel muestra"),
+             "trabajo que se hace y el usuario NO ve por ningún canal"),
+            ("Se ven por otro canal", self.acompanados,
+             "la UI no los nombra, pero salen junto a un TERMINAL_OUT o a un "
+             "log de panel: el usuario se entera igual"),
         ):
             L += [f"## {titulo}", "", f"_{nota}_", ""]
             L += [f"- `{t}`" for t in sorted(conjunto)] or ["- (ninguno)"]
@@ -203,13 +223,47 @@ class Mapa:
         return "\n".join(L)
 
 
+#: Canales que la interfaz SÍ pinta. Un topic emitido junto a uno de estos
+#: llega al usuario aunque la UI no lo nombre.
+_CANALES_VISIBLES = ("TERMINAL_OUT", "naoko.log", "ritsuko.log", "AGENT_POST",
+                     "task.cancelled")
+
+#: Líneas de distancia para considerar dos publicaciones "el mismo sitio".
+#: Doce cubre un bloque con su payload sin cruzar a la función siguiente.
+_VENTANA = 12
+
+
+def _acompanados(raiz: Path, candidatos: set[str]) -> set[str]:
+    """De los topics que la UI no nombra, los que salen con un canal visible."""
+    vistos: set[str] = set()
+    for fichero in (raiz / "magi").rglob("*.py"):
+        if any(p in fichero.parts for p in ("__pycache__", "_attic")):
+            continue
+        try:
+            lineas = fichero.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for i, linea in enumerate(lineas):
+            if "subscribe" in linea or not re.search(r"publish|emit|topic", linea):
+                continue
+            for topic in candidatos - vistos:
+                if f'"{topic}"' not in linea:
+                    continue
+                ctx = "\n".join(lineas[max(0, i - _VENTANA):i + _VENTANA])
+                if any(c in ctx for c in _CANALES_VISIBLES):
+                    vistos.add(topic)
+    return vistos
+
+
 def mapa(inicio: str | Path | None = None) -> Mapa:
     r = _raiz_repo(inicio)
     if r is None:
         return Mapa()
-    return Mapa(interfaz=_topics_interfaz(r),
-                emitidos=_topics_emitidos(r),
-                atendidos=_topics_atendidos(r))
+    m = Mapa(interfaz=_topics_interfaz(r),
+             emitidos=_topics_emitidos(r),
+             atendidos=_topics_atendidos(r))
+    m.acompanados = _acompanados(r, m.backend - m.interfaz)
+    return m
 
 
 if __name__ == "__main__":       # pragma: no cover
