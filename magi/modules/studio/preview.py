@@ -166,3 +166,20 @@ def leer_artefacto(rel: str) -> dict:
         return {**base, "error": f"no se pudo leer: {e}"}
     return {**base, "mime": mime,
             "data_url": f"data:{mime};base64,{base64.b64encode(crudo).decode()}"}
+
+
+# ------------------------------------------------------------------- RPC
+#
+# Los handlers viven aqui y no en el kernel desde el 13-sep-2026: el kernel
+# iba 1069 lineas de un techo de 1070 y L5 no cabia. Es el mismo criterio que
+# ya se aplico a Ritsuko — la superficie RPC de una pieza, al lado de la pieza.
+
+async def rpc_listar(payload, websocket=None):
+    """Ficheros que MAGI ha generado en el workspace, para la vista previa."""
+    return listar_artefactos(limite=int((payload or {}).get("limite", 200)))
+
+
+async def rpc_leer(payload, websocket=None):
+    """Contenido de un artefacto, listo para pintarlo en la vista previa."""
+    return leer_artefacto((payload or {}).get("path", ""))
+

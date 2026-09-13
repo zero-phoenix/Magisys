@@ -568,3 +568,36 @@ def desregistrar_clon(
 
     return True, f"Clon en {p} des-registrado y eliminado limpiamente."
 
+
+# ------------------------------------------------------------------- RPC (L5)
+#
+# La capa local existia solo como herramienta del enjambre: para preguntarle
+# algo habia que abrir una tarea y esperar a que un nodo decidiera usarla. Una
+# respuesta de 0-3,5 ms detras de una ronda de debate.
+#
+# `lilim.pregunta` la pone al alcance de la interfaz. Devuelve la respuesta y
+# su PROCEDENCIA por separado: sin fuente, una respuesta local es indistinguible
+# de una inventada, que es justo lo que Lilim no hace.
+
+async def rpc_pregunta(payload, websocket=None) -> dict:
+    """Pregunta directa a la capa local. Sin red, sin GPU, sin ronda."""
+    import time
+
+    texto = str((payload or {}).get("pregunta", "")).strip()
+    if not texto:
+        return {"ok": False, "error": "pregunta vacia"}
+    t0 = time.perf_counter()
+    try:
+        respuesta = pregunta(texto)
+    except Exception as e:                      # nunca tumba la interfaz
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    ms = (time.perf_counter() - t0) * 1000.0
+    return {
+        "ok": True,
+        "respuesta": respuesta,
+        "ms": round(ms, 2),
+        # El propio motor imprime su metrica MoE dentro del texto; aqui se
+        # separa lo que la interfaz necesita para decir "esto es local".
+        "local": True,
+    }
+

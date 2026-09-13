@@ -5,7 +5,7 @@ mapea el cableado por topics entre `magi-gui/src` y `magi/`.
 
 | | |
 |---|---:|
-| Comandos conectados (UI → handler) | 19 |
+| Comandos conectados (UI → handler) | 20 |
 | Eventos conectados (backend → UI) | 26 |
 | Sin nadie al otro lado | 0 |
 | Capacidades invisibles | 25 |
@@ -18,6 +18,7 @@ _la UI los manda y hay `register_handler` que los atiende_
 - `artifacts.read`
 - `eval.run`
 - `git.clone`
+- `lilim.pregunta`
 - `naoko.chat`
 - `naoko.improve.decide`
 - `naoko.improve.list`
@@ -100,3 +101,4 @@ _trabajo que se hace y ningún panel muestra_
 - `swarm.verificacion_agotada`
 - `sys.terminal.out`
 - `system.started`
+

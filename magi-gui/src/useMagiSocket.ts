@@ -291,6 +291,9 @@ export function useMagiSocket(port: number = 20128) {
   const fetchConfig = () => rpc("sys.config", {}, 20_000);
   const listArtifacts = (limite = 200) => rpc("artifacts.list", { limite }, 15_000);
   const readArtifact = (path: string) => rpc("artifacts.read", { path }, 20_000);
+  // L5 — la capa local responde en milisegundos: 10 s de tope es de sobra,
+  // y si tarda más es que algo va mal, no que esté pensando.
+  const askLilim = (pregunta: string) => rpc("lilim.pregunta", { pregunta }, 10_000);
 
   // v5.3.0 — gestión de la lista de conversaciones: títulos, archivar, borrar.
   const fetchTaskList = () => rpc("task.list", {}, 10_000).then((res) => {
@@ -440,7 +443,7 @@ export function useMagiSocket(port: number = 20128) {
     listImprovements, proposeImprovement, decideImprovement,
     fetchTelemetry, requestFileContent, sendNaokoChat,
     sendRitsukoChat, fetchRitsukoInformes,
-    fetchConfig, listArtifacts, readArtifact,
+    fetchConfig, listArtifacts, readArtifact, askLilim,
     fetchTaskList, archiveTask, deleteTask,
   }), []);
 }

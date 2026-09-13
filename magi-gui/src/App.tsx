@@ -14,6 +14,7 @@ import SystemPanel from './components/SystemPanel';
 import CommandPalette from './components/CommandPalette';
 import NaokoPanel from './components/NaokoPanel';
 import RitsukoPanel from './components/RitsukoPanel';
+import LilimPanel from './components/LilimPanel';
 import { crearRenderCode } from './components/CodigoMarkdown';
 import GraficoRondas from './components/GraficoRondas';
 import ImprovementPanel from './components/ImprovementPanel';
@@ -74,7 +75,7 @@ export default function App() {
           listImprovements, proposeImprovement, decideImprovement,
           requestFileContent, sendNaokoChat,
           sendRitsukoChat, fetchRitsukoInformes,
-          fetchConfig, listArtifacts, readArtifact,
+          fetchConfig, listArtifacts, readArtifact, askLilim,
           archiveTask, deleteTask  // v5.3.0 — archivar / borrar conversación
         } = useMagiSocket(20128);
   const { playCalcBeep, playDecisionClack } = useMagiAudio();
@@ -213,7 +214,7 @@ export default function App() {
   // §7.3 — catálogo de la paleta. Las pestañas se derivan de la misma lista
   // que pinta la barra, para que añadir una no exija acordarse de esto.
   const PESTAÑAS = ["Plan", "Código", "Vista previa", "Terminal", "Naoko",
-                    "Ritsuko", "Configuración", "Gráfico HDC",
+                    "Ritsuko", "Lilim", "Configuración", "Gráfico HDC",
                     "Estado de Motores IA", "Coste", "Sistema", "Mejoras"];
 
   const comandos: Command[] = [
@@ -744,6 +745,8 @@ export default function App() {
                           setImagen={setNaokoImage} />
             )}
 
+            {/* L5 — la capa local, alcanzable sin abrir una tarea. */}
+            {activeTab === "Lilim" && <LilimPanel askLilim={askLilim} />}
             {activeTab === "Ritsuko" && (
               <RitsukoPanel ritsukoMessages={ritsukoMessages}
                             ritsukoStatus={ritsukoStatus}
