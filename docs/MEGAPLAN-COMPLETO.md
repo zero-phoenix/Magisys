@@ -88,16 +88,19 @@ escribieron el 6-sep y se publicaron en la v5.27.0**. Lo que queda de verdad:
    fallo de infraestructura en el rechazo aleatorio de 1 de cada 3 entregas
    legítimas. **F4 va detrás de la estabilidad de la suite**, que es trabajo
    aparte y ya abierto.
-2. **Herramientas alcanzables.** `repos_clonar`, `repos_desregistrar`,
-   `web_search` y `web_read` están en el registry pero fuera de `CORE_TOOLS` y
-   de todo `_DOMAIN_TOOLSETS`: en cuanto la tarea tiene pista de dominio,
-   desaparecen (`builtin.py:786-789`). `huerfanos.py` no lo caza porque busca el
-   nombre como texto. Hace falta un trinquete que lo mire.
-3. **Guardas de escritura destructiva** (`TRASPASO-ASTRA.md` §5.1): una
-   herramienta dejó `vidgpu.c` en 15 de 417 líneas, y Melchior citó
-   `vita_gpu.h`, que no existe. Rechazar la escritura que reduce un fichero por
-   debajo del ~25 % y comprobar que las citas `fichero:línea` existen.
-   **Bloquea soltarle el repositorio del emulador al enjambre.**
+2. **Herramientas alcanzables** — hecho a medias, con el número delante. No eran
+   cuatro: eran **18 de 67** fuera de `CORE_TOOLS` y de toda caja, incluida la
+   capa Lilim entera. El reparto por dominio las deja en **12**, y las 12 no
+   caben: el catálogo tiene techo (2700 por dominio, 3500 multidominio) y va a
+   2617 y 3160. Para las que faltan, la salida que señala el propio test es
+   **reducir parámetros** de las que ya están. `test_herramientas_alcanzables.py`
+   congela el número para que no crezca.
+3. ~~Guardas de escritura destructiva~~ — **hecho, las dos mitades.** Una
+   escritura que deja el fichero por debajo del 25 % se rechaza y pide
+   `truncar=true` (el caso medido: `vidgpu.c`, 14.267 → 523 bytes, el 3,7 %). Y
+   los ficheros citados se comprueban en disco antes de arbitrar: el prompt de
+   Casper recibe la lista de los que NO existen, que es lo que le faltó el 8-sep
+   con `vita_gpu.h`. **Ya no bloquea soltarle el repositorio al enjambre.**
 4. **E1** a medias (el plan se pinta una vez y no cambia de estado, y no filtra
    por conversación), **E2** (Naoko/Ritsuko son pestañas del cajón derecho, no
    hilos en la izquierda), **E3** (el manifiesto ni siquiera viaja en
@@ -105,11 +108,18 @@ escribieron el 6-sep y se publicaron en la v5.27.0**. Lo que queda de verdad:
    Lilim ni RPC: la capa existe y es inalcanzable desde la interfaz).
 5. **E2/E3 del emulador** (instrumentar SH2LRU/dynarec; Ronda 4 BIOS/CDB de
    NiGHTS). **E4** solo con Vita real.
-6. **A9 de la bitácora está caducado:** `VIDGPUVdp2LogTiming` en
-   `src/vita/vidgpu.c` ya imprime `drawn/presented/dropped`. Corregirlo antes de
-   que otro encargo salga con premisa falsa, como ya pasó.
-7. **Tres umbrales absolutos de tiempo** (`test_fase2_velocidad.py:147,175`,
-   `test_phase2.py:106,191`): miden el runner, no el código (R12).
+6. ~~A9 de la bitácora está caducado~~ — **no lo estaba, y el pendiente era
+   mío.** Comprobado el 13-sep leyendo las dos fuentes: `vidgpu.c:340` imprime
+   `drawn=%d presented=%d dropped=%d`, y la bitácora **ya lo dice desde el
+   2-sep**, tachado y con su medición: «SUPERADO por medición: los imprime cada
+   5 s desde el 18-jul… drawn=94, presented=94, dropped=0 a 34,7 FPS». Lo puse
+   aquí copiándolo de `TRASPASO-ASTRA.md` §4.1 sin abrir la bitácora — que es
+   exactamente el fallo que ese traspaso cuenta haber cometido con este MISMO
+   hallazgo. La tabla de versiones de este documento (v5.20.0) ya lo daba por
+   caído: me contradije en el mismo fichero.
+7. ~~Tres umbrales absolutos de tiempo~~ — **hechos**, y eran cinco. Ahora se
+   miden contra la serie medida en la misma corrida (R12); de paso se quitó el
+   `skipif` de xdist que tapaba uno de ellos.
 
 ## 3. REGLAS NO NEGOCIABLES
 
