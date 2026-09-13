@@ -2,7 +2,10 @@ import React from 'react';
 import { useMagiStore } from '../store';
 
 export const PlanCard: React.FC = () => {
-  const plan = useMagiStore((state) => state.plan);
+  // E1 — el de ESTA conversación, no el último que llegó. Antes se leía un
+  // plan global: abrir otra tarea enseñaba el plan de la anterior, que es
+  // peor que no enseñar ninguno — parece información y no lo es.
+  const plan = useMagiStore((state) => state.planes[state.activeConversationId] || null);
 
   if (!plan || !plan.items || plan.items.length === 0) return null;
 

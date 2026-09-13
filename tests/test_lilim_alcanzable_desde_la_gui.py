@@ -112,3 +112,22 @@ def test_la_interfaz_lo_llama_y_lo_pinta():
     assert (
         "ms" in panel and "local" in panel
     ), "el panel no enseña la medición ni dice que la respuesta es local"
+
+
+def test_el_plan_se_pinta_por_conversacion_y_no_global():
+    """
+    E1 — el plan vivo es de SU tarea.
+
+    El store guardaba un unico `plan`: el ultimo `task.plan` que llegara se
+    pintaba en todas las conversaciones, incluidas las que no tenian ninguno.
+    Abrir otra tarea ensenaba el plan de la anterior — peor que no ensenar
+    nada, porque parece informacion y no lo es.
+    """
+    store = (RAIZ / "magi-gui/src/store.ts").read_text(encoding="utf-8")
+    card = (RAIZ / "magi-gui/src/components/PlanCard.tsx").read_text(
+        encoding="utf-8")
+
+    assert "planes" in store, "el store no guarda los planes por conversacion"
+    assert "activeConversationId" in card, (
+        "PlanCard no filtra por conversacion: pinta el ultimo plan que llegue")
+
