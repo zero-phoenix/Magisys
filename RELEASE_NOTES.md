@@ -75,7 +75,7 @@ ahora convertiría ese fallo intermitente de infraestructura en el rechazo
 aleatorio de una de cada tres entregas legítimas. Va detrás de la estabilidad de
 la suite, no delante.
 
-**67 herramientas** en el catálogo. **1855 tests en Python** + **135 en
+**67 herramientas** en el catálogo. **1855 tests en Python** + **138 en
 TypeScript/GUI**. Techos: `kernel.py` 1069/1070, `orchestrator.py` **1489**/1550,
 `ritsuko.py` 800/800, `builtin.py` 797/800; huérfanos en 80.
 
