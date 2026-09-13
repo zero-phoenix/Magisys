@@ -125,6 +125,11 @@ interface MagiState {
    *  que no tenían ninguno. */
   planes: Record<string, any>;
   setPlan: (plan: any | null) => void;
+  /** Presupuesto de llamadas por tarea, de `swarm.ronda`. El orquestador lo
+   *  publicaba con el comentario «aquí solo se informa al GUI del coste
+   *  acumulado» y la interfaz no escuchaba ese topic. */
+  presupuestos: Record<string, { round: number; calls_used: number; techo: number }>;
+  setPresupuesto: (p: any) => void;
 }
 
 export const useMagiStore = create<MagiState>((set) => ({
@@ -313,6 +318,20 @@ export const useMagiStore = create<MagiState>((set) => ({
   cancelReport: null,
   setCancelReport: (report) => set({ cancelReport: report }),
   planes: {},
+  presupuestos: {},
+  setPresupuesto: (p) => set((state) => {
+    if (!p || !p.task_id) return {} as any;
+    return {
+      presupuestos: {
+        ...state.presupuestos,
+        [p.task_id]: {
+          round: Number(p.round) || 0,
+          calls_used: Number(p.calls_used) || 0,
+          techo: Number(p.techo) || 0,
+        },
+      },
+    };
+  }),
   // El plan trae su `task_id`; si faltara, se guarda en la conversación
   // activa, que es de donde viene. Nunca en una tercera.
   setPlan: (plan) => set((state) => {

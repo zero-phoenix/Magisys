@@ -482,7 +482,7 @@ común**, sin otra IA supervisándolo. Cada versión acerca eso:
   versión del kernel en vivo; el sistema se audita usándose a sí mismo y lo
   que encuentra se corrige con la medición pegada al commit.
 
-**1855 tests en Python · 135 en la interfaz · sin tests verdes no hay release.**
+**1855 tests en Python · 138 en la interfaz · sin tests verdes no hay release.**
 
 Y esa regla no depende del CI. Lo mismo que ejecuta GitHub Actions se ejecuta
 aquí, con los mismos comandos:

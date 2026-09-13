@@ -111,6 +111,12 @@ export function useMagiSocket(port: number = 20128) {
                 // decia de ninguna forma. La v5.21.1 puso el aviso; se quedo sin
                 // conectar, igual que F2-F5 en el backend.
                 useMagiStore.getState().setAwaitingApproval(true);
+              } else if (topic === 'swarm.ronda') {
+                // El orquestador lo publica «para informar al GUI del coste
+                // acumulado» y nadie lo escuchaba: las llamadas gastadas y su
+                // techo se quedaban en el bus. Es lo que decide si una tarea
+                // llegará al final o se quedará sin presupuesto a mitad.
+                useMagiStore.getState().setPresupuesto(payload);
               } else if (topic === 'swarm.routed') {
                 useMagiStore.getState().setRoute(payload);
               } else if (topic === 'agent.delta_end') {

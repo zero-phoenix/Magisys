@@ -24,9 +24,18 @@
  */
 import { Background, Controls, Edge, Node, ReactFlow } from "@xyflow/react";
 import { agruparEnRondas, tituloDelDebate } from "../lib/rondas";
+import { useMagiStore } from "../store";
 import { avisoDelDebate } from "../lib/calidadDebate";
 
 export default function GraficoRondas({ messages }: { messages: any[] }) {
+  // El presupuesto de llamadas de ESTA conversacion. El orquestador lo publica
+  // en `swarm.ronda` «para informar al GUI del coste acumulado» y la interfaz
+  // no escuchaba ese topic: las llamadas gastadas y su techo se quedaban en el
+  // bus. Es el dato que dice si una tarea llegara al final o se quedara sin
+  // presupuesto a mitad, y va donde se mira el avance del debate.
+  const presupuesto = useMagiStore(
+    (s) => s.presupuestos[s.activeConversationId] || null);
+
 
                // EL DEBATE POR RONDAS, no una cadena de mensajes.
                //
@@ -46,8 +55,11 @@ export default function GraficoRondas({ messages }: { messages: any[] }) {
                nodes.push({
                  id: 'user',
                  position: { x: 300, y: 0 },
-                 data: { label: '👤 TU PETICIÓN' },
-                 style: { background: '#2c3e50', color: 'white', border: '1px solid #34495e', borderRadius: '8px', width: 200 }
+                 data: { label: presupuesto
+                           ? `👤 TU PETICIÓN
+ronda ${presupuesto.round} · ${presupuesto.calls_used}/${presupuesto.techo} llamadas`
+                           : '👤 TU PETICIÓN' },
+                 style: { background: '#2c3e50', color: 'white', border: '1px solid #34495e', borderRadius: '8px', width: 200, whiteSpace: 'pre-line' }
                });
 
                const COLOR: Record<string, string> = {

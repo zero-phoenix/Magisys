@@ -59,3 +59,33 @@ describe("planes por conversación", () => {
     expect(useMagiStore.getState().planes["t-1"]).toBeTruthy();
   });
 });
+
+describe("presupuesto por ronda", () => {
+  beforeEach(() => {
+    useMagiStore.setState({ presupuestos: {}, activeConversationId: "default" });
+  });
+
+  it("guarda las llamadas gastadas y su techo, por tarea", () => {
+    useMagiStore.getState().setPresupuesto(
+      { task_id: "t-1", round: 2, calls_used: 12, techo: 40 });
+
+    expect(useMagiStore.getState().presupuestos["t-1"]).toEqual(
+      { round: 2, calls_used: 12, techo: 40 });
+  });
+
+  it("una tarea no pisa el presupuesto de otra", () => {
+    const { setPresupuesto } = useMagiStore.getState();
+    setPresupuesto({ task_id: "t-1", round: 1, calls_used: 5, techo: 40 });
+    setPresupuesto({ task_id: "t-2", round: 1, calls_used: 30, techo: 40 });
+
+    const { presupuestos } = useMagiStore.getState();
+    expect(presupuestos["t-1"].calls_used).toBe(5);
+    expect(presupuestos["t-2"].calls_used).toBe(30);
+  });
+
+  it("un evento sin task_id no ensucia el estado", () => {
+    useMagiStore.getState().setPresupuesto({ round: 1, calls_used: 9 });
+    expect(Object.keys(useMagiStore.getState().presupuestos)).toHaveLength(0);
+  });
+});
+
