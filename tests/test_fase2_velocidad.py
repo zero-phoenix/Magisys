@@ -136,15 +136,22 @@ async def test_un_candidato_lento_con_medida_rapida_no_secuestra_la_cola():
     timeout del request (15 s). Sin el techo, esta llamada se llevaba 8 s
     de la cola entera cada vez.
     """
+    # El umbral no es un numero de reloj: es lo que tarda ESTE proveedor.
+    # Estaba escrito a mano como `< 8.0` y parecia una constante arbitraria de
+    # las que tumbaron el CI en la v5.17.0 (R12). Atado a `demo_s`, dice lo que
+    # de verdad comprueba: que el techo corto antes de que el lento acabara.
+    demo_s = 8
     reg = ProviderRegistry()
-    reg.register(ProveedorDormilon("lento", "gpt", demo_s=8, medido_ms=200))
+    reg.register(ProveedorDormilon("lento", "gpt", demo_s=demo_s, medido_ms=200))
     req = CompletionRequest(messages=[Message(role="user", content="x")],
                             timeout_s=15.0)
     t0 = time.monotonic()
     with pytest.raises(ProviderError):
         await reg.complete(req)
     elapsed = time.monotonic() - t0
-    assert elapsed < 8.0, f"cortó tarde: {elapsed:.1f}s (techo debería ser 6s)"
+    assert elapsed < demo_s, (
+        f"corto tarde: {elapsed:.1f}s, y el proveedor lento tardaba {demo_s}s. "
+        f"El techo (6 s) tiene que cortar antes que eso")
 
 
 @pytest.mark.asyncio
@@ -163,8 +170,10 @@ async def test_sin_medida_espera_lo_que_haga_falta():
 
 @pytest.mark.asyncio
 async def test_stream_corta_en_el_primer_token_si_falta_a_su_promesa():
+    demo_s = 8
     reg = ProviderRegistry()
-    reg.register(ProveedorStreamEcho("lentox", "gpt", demo_s=8, medido_ms=200))
+    reg.register(ProveedorStreamEcho("lentox", "gpt", demo_s=demo_s,
+                                     medido_ms=200))
     req = CompletionRequest(messages=[Message(role="user", content="x")],
                             timeout_s=15.0, stream=True)
     t0 = time.monotonic()
@@ -172,7 +181,9 @@ async def test_stream_corta_en_el_primer_token_si_falta_a_su_promesa():
         async for _ in reg.stream(req):
             pass
     elapsed = time.monotonic() - t0
-    assert elapsed < 8.0, f"el primer token tardó de más: {elapsed:.1f}s"
+    assert elapsed < demo_s, (
+        f"el primer token tardo {elapsed:.1f}s y el proveedor entero tardaba "
+        f"{demo_s}s: no corto en el primer token")
 
 
 @pytest.mark.asyncio
@@ -217,13 +228,21 @@ async def test_el_bucket_espacia_la_rafaga_y_nunca_bloquea():
     bucket = _tasa_manager.get_bucket("nostalgia", 2.0, 4)
     bucket.tokens = 2.0
 
+    # El control estaba aqui al lado y no se usaba: la tercera llamada SI
+    # espera. Comparar el burst contra ella mide el mecanismo; compararlo
+    # contra `< 0.2` medía la maquina (R12).
+    burst = []
     for _ in range(2):
         t0 = time.monotonic()
         await p._esperar_tasa("nostalgia")
-        assert time.monotonic() - t0 < 0.2, "burst debe pasar al instante"
+        burst.append(time.monotonic() - t0)
 
     t0 = time.monotonic()
     await p._esperar_tasa("nostalgia")
     espera = time.monotonic() - t0
+
+    assert max(burst) < espera / 2, (
+        f"el burst no paso al instante: {max(burst):.3f}s frente a "
+        f"{espera:.2f}s de la que si espera, en esta misma corrida")
     assert 0.3 < espera < _MAX_ESPERA_TASA_S + 0.2, (
         f"esperaba recarga (~0.6s), tardó {espera:.2f}s")

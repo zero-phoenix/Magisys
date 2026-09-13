@@ -92,18 +92,39 @@ async def test_broken_json_is_caught():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(os.environ.get("PYTEST_XDIST_WORKER") is not None,
-                    reason="contrato de rendimiento: con la CPU repartida entre "
-                           "workers de xdist, 5 sleeps de 0,4 s en paralelo no "
-                           "caben en 1,5 s aunque el verificador paralelice bien")
 async def test_blocks_are_verified_in_parallel():
-    """Cinco bloques con una pausa de 0.4 s cada uno: en serie serían 2 s."""
+    """
+    Cinco bloques con una pausa de 0,4 s: en paralelo tienen que costar menos
+    que en serie, y la serie se MIDE aquí mismo.
+
+    Antes esto era `< 1.5` segundos de reloj, y llevaba un `skipif` para xdist
+    porque con la CPU repartida entre workers el umbral no se cumplía aunque el
+    verificador paralelizara perfectamente. O sea: el test medía el runner, no
+    el código — la regla R12, aprendida cuatro veces en este proyecto, y la
+    misma clase de bomba que tumbó el CI en la v5.17.0 con `t_melchior_ms < 900`.
+
+    Ahora se mide el CONTROL en la misma corrida: un bloque suelto cinco veces
+    (la serie) contra los cinco de golpe. Si la máquina va lenta, las dos
+    medidas crecen juntas y la comparación sigue valiendo. Y sin umbral de
+    reloj, el `skipif` sobra: bajo xdist también se cumple.
+    """
     import time
-    code = "```python\nimport time; time.sleep(0.4)\n```\n" * 5
+    uno = "```python\nimport time; time.sleep(0.4)\n```\n"
+    cinco = uno * 5
+
     t0 = time.monotonic()
-    rep = await ProposalVerifier().verify(code)
+    for _ in range(5):
+        await ProposalVerifier().verify(uno)
+    serie = time.monotonic() - t0
+
+    t0 = time.monotonic()
+    rep = await ProposalVerifier().verify(cinco)
+    paralelo = time.monotonic() - t0
+
     assert rep.ok
-    assert time.monotonic() - t0 < 1.5, "no se verificaron en paralelo"
+    assert paralelo < serie * 0.7, (
+        f"no se verificaron en paralelo: {paralelo:.2f}s frente a {serie:.2f}s "
+        f"en serie, medidos en esta misma corrida")
 
 
 @pytest.mark.asyncio
@@ -183,12 +204,70 @@ async def test_multi_axis_critique_covers_every_axis(agents):
 
 
 @pytest.mark.asyncio
-async def test_multi_axis_is_faster_than_serial(agents):
+async def test_multi_axis_is_faster_than_serial():
+    """
+    El nombre promete una comparación contra la serie; ahora la hace.
+
+    DOS COSAS ESTABAN MAL, Y LA SEGUNDA LA DESTAPÓ LA PRIMERA
+    ========================================================
+    1. Medía `< 2.0` segundos de reloj, que no es «más rápido que en serie»:
+       es «más rápido que un número». Un umbral absoluto mide la máquina donde
+       corre (R12), y este ya había obligado a poner un `skipif` en el test de
+       al lado.
+
+    2. Al cambiarlo por la comparación de verdad, se puso inestable bajo
+       `-n auto`. La causa: el fixture `agents` usa `EchoProvider` con la
+       respuesta enlatada, o sea **instantánea**. Sin latencia no hay nada que
+       paralelizar, y la comparación se convertía en una carrera entre dos
+       cosas igual de rápidas, decidida por el ruido del planificador.
+
+       Lo que significa es peor de lo que parece: **con el umbral de 2,0
+       segundos este test nunca midió el paralelismo**. Con proveedores
+       instantáneos habría pasado igual con una implementación en serie. Un
+       test verde que no puede distinguir lo que dice comprobar.
+
+    Por eso se monta aquí un escenario con LATENCIA de verdad: cuatro ejes a
+    0,3 s son 1,2 s en serie y ~0,3 s en paralelo. La diferencia es del cuádruple
+    y ya no la decide el ruido.
+    """
     import time
-    _, b = agents
-    t0 = time.monotonic()
-    await critique_multi_axis(b, task_id="t", proposal_text="x", round_num=1)
-    assert time.monotonic() - t0 < 2.0
+
+    from swarm_helpers import GuionProvider, montar_registro
+
+    from magi.modules.swarm.agents import BalthasarAgent
+    from magi.modules.swarm.parallel import CRITIQUE_AXES
+
+    retardo = 0.3
+    reg = montar_registro(
+        GuionProvider("g4f-deepseek", "deepseek",
+                      por_defecto=("critica del eje", retardo)),
+        GuionProvider("g4f-claude", "claude",
+                      por_defecto=("critica del eje", retardo)),
+        GuionProvider("g4f-qwen", "qwen",
+                      por_defecto=("critica del eje", retardo)))
+    await reg.probe_all()
+    set_registry(reg)
+    try:
+        b = BalthasarAgent(Blackboard(), MagiBus())
+        b.llm = FreeCloudLLM(reg)
+        ejes = list(CRITIQUE_AXES)
+
+        t0 = time.monotonic()
+        for eje in ejes:
+            await critique_multi_axis(b, task_id="t", proposal_text="x",
+                                      round_num=1, axes=[eje])
+        serie = time.monotonic() - t0
+
+        t0 = time.monotonic()
+        await critique_multi_axis(b, task_id="t", proposal_text="x",
+                                  round_num=1)
+        paralelo = time.monotonic() - t0
+    finally:
+        set_registry(None)
+
+    assert paralelo < serie / 2, (
+        f"los {len(ejes)} ejes en paralelo tardaron {paralelo:.2f}s y en serie "
+        f"{serie:.2f}s, medidos en esta misma corrida con {retardo}s por eje")
 
 
 def test_variants_are_labelled_for_comparison():
