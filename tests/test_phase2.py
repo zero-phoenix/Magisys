@@ -204,36 +204,70 @@ async def test_multi_axis_critique_covers_every_axis(agents):
 
 
 @pytest.mark.asyncio
-async def test_multi_axis_is_faster_than_serial(agents):
+async def test_multi_axis_is_faster_than_serial():
     """
     El nombre promete una comparación contra la serie; ahora la hace.
 
-    Medía `< 2.0` segundos de reloj, que no es «más rápido que en serie»: es
-    «más rápido que un número». Un umbral absoluto mide la máquina donde corre
-    —R12— y este ya había obligado a poner un `skipif` en el test de al lado.
+    DOS COSAS ESTABAN MAL, Y LA SEGUNDA LA DESTAPÓ LA PRIMERA
+    ========================================================
+    1. Medía `< 2.0` segundos de reloj, que no es «más rápido que en serie»:
+       es «más rápido que un número». Un umbral absoluto mide la máquina donde
+       corre (R12), y este ya había obligado a poner un `skipif` en el test de
+       al lado.
 
-    La serie se mide aquí: los mismos ejes, uno detrás de otro.
+    2. Al cambiarlo por la comparación de verdad, se puso inestable bajo
+       `-n auto`. La causa: el fixture `agents` usa `EchoProvider` con la
+       respuesta enlatada, o sea **instantánea**. Sin latencia no hay nada que
+       paralelizar, y la comparación se convertía en una carrera entre dos
+       cosas igual de rápidas, decidida por el ruido del planificador.
+
+       Lo que significa es peor de lo que parece: **con el umbral de 2,0
+       segundos este test nunca midió el paralelismo**. Con proveedores
+       instantáneos habría pasado igual con una implementación en serie. Un
+       test verde que no puede distinguir lo que dice comprobar.
+
+    Por eso se monta aquí un escenario con LATENCIA de verdad: cuatro ejes a
+    0,3 s son 1,2 s en serie y ~0,3 s en paralelo. La diferencia es del cuádruple
+    y ya no la decide el ruido.
     """
     import time
 
+    from swarm_helpers import GuionProvider, montar_registro
+
+    from magi.modules.swarm.agents import BalthasarAgent
     from magi.modules.swarm.parallel import CRITIQUE_AXES
 
-    _, b = agents
-    ejes = list(CRITIQUE_AXES)
+    retardo = 0.3
+    reg = montar_registro(
+        GuionProvider("g4f-deepseek", "deepseek",
+                      por_defecto=("critica del eje", retardo)),
+        GuionProvider("g4f-claude", "claude",
+                      por_defecto=("critica del eje", retardo)),
+        GuionProvider("g4f-qwen", "qwen",
+                      por_defecto=("critica del eje", retardo)))
+    await reg.probe_all()
+    set_registry(reg)
+    try:
+        b = BalthasarAgent(Blackboard(), MagiBus())
+        b.llm = FreeCloudLLM(reg)
+        ejes = list(CRITIQUE_AXES)
 
-    t0 = time.monotonic()
-    for eje in ejes:
+        t0 = time.monotonic()
+        for eje in ejes:
+            await critique_multi_axis(b, task_id="t", proposal_text="x",
+                                      round_num=1, axes=[eje])
+        serie = time.monotonic() - t0
+
+        t0 = time.monotonic()
         await critique_multi_axis(b, task_id="t", proposal_text="x",
-                                  round_num=1, axes=[eje])
-    serie = time.monotonic() - t0
+                                  round_num=1)
+        paralelo = time.monotonic() - t0
+    finally:
+        set_registry(None)
 
-    t0 = time.monotonic()
-    await critique_multi_axis(b, task_id="t", proposal_text="x", round_num=1)
-    paralelo = time.monotonic() - t0
-
-    assert paralelo < serie, (
+    assert paralelo < serie / 2, (
         f"los {len(ejes)} ejes en paralelo tardaron {paralelo:.2f}s y en serie "
-        f"{serie:.2f}s, medidos en esta misma corrida")
+        f"{serie:.2f}s, medidos en esta misma corrida con {retardo}s por eje")
 
 
 def test_variants_are_labelled_for_comparison():
