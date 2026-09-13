@@ -19,6 +19,26 @@ export interface FileChange {
   revertible: boolean;
 }
 
+/**
+ * Procedencia del artefacto (v11 A1).
+ *
+ * El packager escribe `<exe>.manifest.json` con el sha256 del ejecutable y el
+ * de cada fuente. Hasta la v5.28 eso se calculaba y se quedaba en disco: quien
+ * aprobaba un binario no veía de dónde salía. Va resumido a propósito — el
+ * manifiesto entero son cientos de hashes y aquí solo sirve lo que se
+ * comprueba de un vistazo.
+ *
+ * Vacío (`{}`) cuando la tarea no produjo ningún artefacto, que es lo normal.
+ */
+export interface ManifiestoArtefacto {
+  exe?: string;
+  sha256?: string;
+  entry?: string;
+  fuentes?: number;
+  /** Dónde está el manifiesto entero, para quien quiera abrirlo. */
+  ruta?: string;
+}
+
 export interface ApprovalRequest {
   task_id: string;
   summary: string;
@@ -32,6 +52,8 @@ export interface ApprovalRequest {
    *  deja de ser una afirmación y pasa a ser un "no lo sé". */
   journal_error: string;
   files_touched: number;
+  /** A1: procedencia del .exe. `{}` si la tarea no generó ninguno. */
+  manifiesto: ManifiestoArtefacto;
 }
 
 /**

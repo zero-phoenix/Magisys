@@ -180,12 +180,51 @@ class ApprovalRequest:
     def files_touched(self) -> int:
         return len(self.changes)
 
+    def _manifiesto(self) -> dict[str, Any]:
+        """
+        A1: la procedencia del artefacto, resumida para la tarjeta.
+
+        El packager escribe `<exe>.manifest.json` con el sha256 del ejecutable
+        y el de CADA fuente. Eso se calculaba y se quedaba en disco: quien
+        tenía que decir «sí» a un binario lo aprobaba sin ver de dónde salía.
+
+        Se resume a propósito —ejecutable, hash, entrada, cuántas fuentes y
+        dónde está el fichero entero—: el manifiesto de un proyecto mediano
+        son cientos de líneas de hashes, y en una tarjeta de decisión solo
+        sirve lo que se comprueba de un vistazo.
+
+        Se lee del contenido que el journal ya guardó, no del disco: el
+        fichero puede haberse movido, y reunir el contexto no puede reventar
+        la decisión.
+        """
+        import json as _json
+
+        for c in self.changes:
+            if not c.path.endswith(".manifest.json"):
+                continue
+            try:
+                datos = _json.loads(c.after or "")
+            except Exception:
+                continue
+            if not isinstance(datos, dict) or "exe_sha256" not in datos:
+                continue
+            return {
+                "exe": str(datos.get("exe", "")),
+                "sha256": str(datos.get("exe_sha256", "")),
+                "entry": str(datos.get("entry", "")),
+                "fuentes": len(datos.get("fuentes") or {}),
+                "ruta": c.path,
+            }
+        return {}
+
     def to_payload(self) -> dict[str, Any]:
         return {
             "task_id": self.task_id,
             "summary": self.summary,
             "changes": [c.to_payload() for c in self.changes],
             "commands": self.commands,
+            # E3 — sin esto, A1 calculaba la procedencia y nadie la veía.
+            "manifiesto": self._manifiesto(),
             "tests_ran": self.tests_ran,
             "tests_passed": self.tests_passed,
             "tests_detail": self.tests_detail,
