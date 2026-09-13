@@ -88,6 +88,19 @@ export default function DiffViewer({ approval, fallbackText, onApprove, onReject
               : "sin detalle del cambio: el backend no envió el contexto"}
           </div>
         </div>
+        {/* A1/E3 — la procedencia del artefacto, donde se decide sobre él.
+            Se calculaba desde la v11 y no se enseñaba en ninguna parte: se
+            aprobaba un .exe sin ver de qué fuentes salía ni con qué hash. */}
+        {approval?.manifiesto?.sha256 ? (
+          <div style={{ fontSize: 10, color: "var(--dim)", minWidth: 0, textAlign: "right" }}>
+            <div title={approval.manifiesto.exe}>
+              artefacto: <b style={{ color: "var(--acc2)" }}>{(approval.manifiesto.exe || "").split(/[\\/]/).pop()}</b>
+            </div>
+            <div title={approval.manifiesto.sha256}>
+              sha256 {approval.manifiesto.sha256.slice(0, 12)}… · {approval.manifiesto.fuentes} fuente(s) selladas · entrada {approval.manifiesto.entry}
+            </div>
+          </div>
+        ) : null}
         <div style={{ display: "flex", gap: 10, flexShrink: 0 }}>
           <button className="bt go" style={{ background: "rgba(0, 255, 100, 0.2)", color: "#0f0" }} onClick={onApprove}>
             Apruebo
