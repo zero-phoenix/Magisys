@@ -1060,11 +1060,20 @@ DECISIÓN: APROBADA
         bloque_replica = (f"\nRÉPLICA de Melchior a las objeciones "
                           f"(posterior a la crítica; pésala tú):\n"
                           f"{replica}\n" if replica else "")
+        # Las citas se comprueban antes de arbitrar (TRASPASO-ASTRA §5.1).
+        # El 8-sep Melchior se defendió citando `vita_gpu.h` líneas 42-45 y ese
+        # fichero no existía. Casper no tenía forma de saberlo; ahora sí, y le
+        # llega como dato comprobado, no como sospecha.
+        rotas = _citas_rotas_del_debate(proposal, critique, replica)
+        bloque_citas = (
+            f"\nCITAS COMPROBADAS EN DISCO — estos ficheros NO existen: "
+            f"{', '.join(rotas)}. Quien los cito no los leyo. Pesalo.\n"
+            if rotas else "")
         user_prompt = (
             f"Ronda {round_num}.\n\n"
             f"TESIS de Melchior:\n{proposal['content']}\n\n"
             f"ANTÍTESIS de Balthasar:\n{critique['content']}\n"
-            f"{bloque_replica}\n"
+            f"{bloque_replica}{bloque_citas}\n"
             f"Redacta tu SÍNTESIS: evalúa qué acertó cada uno, construye y "
             f"ejecuta la solución consolidada, y entrégala. Termina con la "
             f"línea de DECISIÓN.")
@@ -1201,3 +1210,17 @@ for _cls, _rol in ((MelchiorAgent, "MELCHIOR"),
                    (CasperAgent, "CASPER")):
     _cls.family = _familia_por_defecto(_rol)
 del _cls, _rol
+
+
+def _citas_rotas_del_debate(proposal: dict, critique: dict,
+                            replica: str) -> list[str]:
+    """Ficheros citados en el debate que no existen en el workspace."""
+    from magi.core.paths import workspace_dir
+    from magi.modules.swarm.citas import citas_rotas
+
+    texto = "\n".join(str((d or {}).get("content", "")) for d in
+                       (proposal, critique)) + "\n" + (replica or "")
+    try:
+        return citas_rotas(texto, workspace_dir())
+    except Exception:          # nunca puede tumbar un arbitraje
+        return []
