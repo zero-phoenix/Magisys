@@ -120,7 +120,10 @@ interface MagiState {
 
   cancelReport: any | null;
   setCancelReport: (report: any | null) => void;
-  plan: any | null;
+  /** Plan vivo POR conversación (E1). Antes era uno solo y global: el plan
+   *  de la última tarea se pintaba en todas las conversaciones, incluidas las
+   *  que no tenían ninguno. */
+  planes: Record<string, any>;
   setPlan: (plan: any | null) => void;
 }
 
@@ -309,6 +312,12 @@ export const useMagiStore = create<MagiState>((set) => ({
 
   cancelReport: null,
   setCancelReport: (report) => set({ cancelReport: report }),
-  plan: null,
-  setPlan: (plan) => set({ plan: plan })
+  planes: {},
+  // El plan trae su `task_id`; si faltara, se guarda en la conversación
+  // activa, que es de donde viene. Nunca en una tercera.
+  setPlan: (plan) => set((state) => {
+    if (!plan) return {} as any;
+    const id = plan.task_id || state.activeConversationId;
+    return { planes: { ...state.planes, [id]: plan } };
+  })
 }));
