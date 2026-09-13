@@ -96,8 +96,16 @@ class Kernel:
         # localhost:3000 que nadie levanta, así que el usuario veía la página
         # de error del navegador. Estos dos endpoints les dan contenido real.
         self.rpc.register_handler("sys.config", self._handle_config)
-        self.rpc.register_handler("artifacts.list", self._handle_artifacts_list)
-        self.rpc.register_handler("artifacts.read", self._handle_artifacts_read)
+        # Los handlers de estas tres viven al lado de su pieza, por el mismo
+        # motivo que los de Ritsuko: el kernel roza su techo y una superficie
+        # RPC se entiende mejor junto al modulo que la sirve.
+        from magi.modules.lilim import rpc_pregunta as _lilim_rpc
+        from magi.modules.studio import preview as _preview
+        self.rpc.register_handler("artifacts.list", _preview.rpc_listar)
+        self.rpc.register_handler("artifacts.read", _preview.rpc_leer)
+        # L5 — la capa local era inalcanzable desde la interfaz: existia como
+        # herramienta del enjambre y no habia forma de preguntarle directamente.
+        self.rpc.register_handler("lilim.pregunta", _lilim_rpc)
 
     async def _handle_metrics(self, payload, websocket):
         """Panel de salud (§3.4): latencias, herramientas, alertas."""
@@ -301,16 +309,6 @@ class Kernel:
                     "texto": dg.catalogo_legible()}
         except Exception as e:                            # pragma: no cover
             return {"error": str(e)}
-
-    async def _handle_artifacts_list(self, payload, websocket):
-        """Ficheros que MAGI ha generado en el workspace, para la vista previa."""
-        from magi.modules.studio.preview import listar_artefactos
-        return listar_artefactos(limite=int((payload or {}).get("limite", 200)))
-
-    async def _handle_artifacts_read(self, payload, websocket):
-        """Contenido de un artefacto, listo para pintarlo en la vista previa."""
-        from magi.modules.studio.preview import leer_artefacto
-        return leer_artefacto((payload or {}).get("path", ""))
 
     async def _handle_self_improve(self, payload, websocket):
         """

@@ -213,4 +213,10 @@ def mapa(inicio: str | Path | None = None) -> Mapa:
 
 
 if __name__ == "__main__":       # pragma: no cover
+    # La consola de Windows es cp1252 y este mapa lleva flechas: sin
+    # esto, regenerarlo revienta con UnicodeEncodeError y el documento
+    # se queda desfasado sin que el fallo diga por que. Es la regla 6
+    # del traspaso, que este generador no cumplia.
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     print(mapa().render())
