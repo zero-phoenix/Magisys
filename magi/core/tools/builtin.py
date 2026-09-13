@@ -29,6 +29,11 @@ _SIN_PYTHON = (
     "esto. Instala Python y vuelve a intentarlo.")
 MAX_READ_BYTES = 400_000
 
+#: Por debajo de esto no se vigila el encogimiento: en un fichero de 300 bytes
+#: cualquier cambio es un porcentaje enorme, y un aviso que salta siempre deja
+#: de leerse.
+MIN_BYTES_ANTI_BORRADO = 1_000
+
 
 @dataclass
 class ToolContext:
@@ -194,13 +199,39 @@ def build_registry() -> ToolRegistry:
 
     @reg.tool("write_file", "Escribe un fichero (lo crea o lo reemplaza). Reversible.",
               {"type": "object", "properties": {
-                  "path": {"type": "string"}, "content": {"type": "string"}},
+                  "path": {"type": "string"}, "content": {"type": "string"},
+                  "truncar": {"type": "boolean",
+                              "description": "declara que quieres dejarlo en "
+                                             "menos de un cuarto"}},
                "required": ["path", "content"]},
               access={"write"}, dangerous=True)
-    def write_file(path: str, content: str, ctx: ToolContext):
+    def write_file(path: str, content: str, ctx: ToolContext,
+                   truncar: bool = False):
         p = ctx.resolve(path)
         if ctx.dry_run:
             return ToolResult(True, f"[dry-run] escribiría {len(content)}b en {p}")
+        # Una escritura que deja el fichero en un cuarto no es una edición.
+        #
+        # El 8-sep-2026 `src/vita/vidgpu.c` pasó de 417 líneas a 15 —de 14.267
+        # bytes a 523, el 3,7 %— en una ronda del emulador. El journal lo hacía
+        # reversible, pero reversible no es avisado: nadie se enteró hasta que
+        # alguien abrió el fichero. Ver TRASPASO-ASTRA §5.1 y
+        # tests/test_escritura_no_borra.py, que mide este caso exacto.
+        #
+        # No prohíbe: obliga a declararlo con `truncar`, y así un borrado
+        # accidental pasa a ser un acto que se lee en la traza.
+        if p.exists() and not truncar:
+            antes = p.stat().st_size
+            ahora = len(content.encode("utf-8"))
+            if antes > MIN_BYTES_ANTI_BORRADO and ahora * 4 < antes:
+                pct = (ahora / antes * 100) if antes else 100.0
+                return ToolResult(False, "", error=(
+                    f"esto deja {p.name} en el {pct:.1f} % de su tamaño "
+                    f"({antes} bytes -> {ahora}). Una escritura que quita tres "
+                    f"cuartos de un fichero suele ser un fragmento pegado "
+                    f"encima, no una edición. Si es a propósito, repítela con "
+                    f"truncar=true; si querías cambiar una parte, usa "
+                    f"edit_file."))
         p.parent.mkdir(parents=True, exist_ok=True)
         entry = ctx.get_journal().record(p, "write" if p.exists() else "create",
                                          tool="write_file")
