@@ -264,11 +264,23 @@ def main():
     args = parser.parse_args()
 
     if args.selftest:
+        salida = None
+        if getattr(sys, "frozen", False):
+            # Build windowed: PyInstaller descarta stdout, así que el informe
+            # viaja a un fichero junto al exe — lo que lee el release antes
+            # de publicar para dejar SELFTEST OK en su log.
+            salida = open(os.path.join(os.path.dirname(sys.executable),
+                                       "selftest_report.txt"), "w",
+                          encoding="utf-8")
+            sys.stdout = sys.stderr = salida
         try:
             sys.exit(_selftest())
         except Exception as e:  # noqa: BLE001 — el selftest REPORTA, no propaga
             print(f"SELFTEST FALLO: {type(e).__name__}: {e}")
             sys.exit(1)
+        finally:
+            if salida is not None:
+                salida.close()
 
     magi = MagiSystem(host=args.host, port=args.port, debug=args.debug)
 

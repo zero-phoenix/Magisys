@@ -195,7 +195,15 @@ jobs:
     # subproceso de verdad. «El exe pesa lo que debe» no implica «el exe
     # arranca»; esto sí lo prueba.
     - name: Smoke test del binario (--selftest)
-      run: dist/Magisys.exe --selftest
+      # El exe es windowed: pwsh no espera a un proceso GUI ni captura su
+      # stdout (corrió «verde» sin ejecutar nada). Start-Process -Wait espera
+      # de verdad; el selftest deja su informe en dist/, se vuelca al log y
+      # se exige SELFTEST OK con código 0: sin binario arrancado no hay release.
+      run: |
+        $p = Start-Process -FilePath "dist/Magisys.exe" -ArgumentList "--selftest" -Wait -PassThru
+        if (Test-Path "dist/selftest_report.txt") { Get-Content "dist/selftest_report.txt" }
+        if ($p.ExitCode -ne 0) { throw "el selftest salio con codigo $($p.ExitCode)" }
+        if (-not (Select-String -Path "dist/selftest_report.txt" -Pattern "SELFTEST OK" -Quiet)) { throw "sin SELFTEST OK en el informe: no se publica" }
       shell: pwsh
 
     - name: Zip Release (versionado)
@@ -203,7 +211,12 @@ jobs:
       # igual en cada release (MAGI-IDE-v5.zip) y no distinguía nada.
       run: |
         $z = "dist/Magisys-v$env:VERSION-win64.zip"
-        Compress-Archive -Path "dist/Magisys.exe" -DestinationPath $z -Force
+        # La clave Groq viaja en el zip como magi/data/groq_key.txt: rotable
+        # sin recompilar y probada por la compuerta del release. Su contenido
+        # jamás se imprime.
+        New-Item -ItemType Directory -Force -Path "dist/magi/data" | Out-Null
+        Copy-Item "magi/data/groq_key.txt" "dist/magi/data/groq_key.txt"
+        Compress-Archive -Path "dist/Magisys.exe","dist/magi" -DestinationPath $z -Force
         $mb = [math]::Round((Get-Item $z).Length / 1MB, 1)
         Write-Host "zip: $mb MB -> $z"
 
