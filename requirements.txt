@@ -34,7 +34,7 @@ pyinstaller==6.21.0
 # Ingeniería inversa y emuladores (§5.3). Ghidra y radare2 son opcionales:
 # se detectan si están instalados y el toolchain funciona sin ellos.
 capstone>=5.0
-unicorn>=2.0
+unicorn>=2.1.4
 
 # Fábrica de artefactos con bucle de observación (§5). Opcionales: sin ellos
 # el sistema genera igual, pero no puede MIRAR lo que produjo.
