@@ -126,7 +126,7 @@ jobs:
     # Node 22 y `npm ci`, EXACTAMENTE igual que el job `gui` de ci.yml. Vite 7
     # exige `^20.19.0 || >=22.12.0`, y `npm install` ignora el lock.
     - name: Set up Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v7
       with:
         node-version: '22'
         cache: 'npm'
