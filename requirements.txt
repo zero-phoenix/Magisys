@@ -21,7 +21,7 @@ g4f
 # Ademas `providers/compat_curl.py` existe precisamente porque las versiones
 # NUEVAS movieron `proxy` del constructor a `request`: el proyecto ya asumia
 # curl_cffi moderno en todas partes menos en este pin.
-curl_cffi>=0.16
+curl_cffi>=0.16.3
 httpx
 requests==2.33.0
 websockets==12.0
