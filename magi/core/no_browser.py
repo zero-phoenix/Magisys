@@ -238,10 +238,11 @@ def _install_cdp_block() -> None:
         cdp.CDPSession.start = _blocked_async  # type: ignore[method-assign]
         if hasattr(cdp.CDPSession, "start_chrome"):
             cdp.CDPSession.start_chrome = _blocked_sync  # type: ignore[method-assign]
-    if hasattr(cdp, "SyncCDPSession"):
-        cdp.SyncCDPSession.start_chrome = _blocked_sync  # type: ignore[method-assign]
-        if hasattr(cdp.SyncCDPSession, "start"):
-            cdp.SyncCDPSession.start = _blocked_sync  # type: ignore[method-assign]
+    _sync_cls = getattr(cdp, "SyncCDPSession", None)
+    if _sync_cls is not None:
+        _sync_cls.start_chrome = _blocked_sync
+        if hasattr(_sync_cls, "start"):
+            _sync_cls.start = _blocked_sync
 
 
 # ------------------------------------------------- capa 2: nodriver / webview
