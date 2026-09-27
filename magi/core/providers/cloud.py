@@ -65,9 +65,14 @@ _REFUSAL_HINTS = (
 _registry: ProviderRegistry | None = None
 _registry_lock = asyncio.Lock()
 
+#: Registro de SUBAGENTES: Groq (única clave permitida) primero, g4f detrás.
+#: Separado a propósito del del enjambre — ver build_subagent_registry.
+_subagent_registry: ProviderRegistry | None = None
+_subagent_lock = asyncio.Lock()
+
 
 async def get_registry() -> ProviderRegistry:
-    """Registro compartido, construido una sola vez."""
+    """Registro compartido del ENJAMBRE (g4f puro), construido una sola vez."""
     global _registry
     async with _registry_lock:
         if _registry is None:
@@ -76,10 +81,26 @@ async def get_registry() -> ProviderRegistry:
     return _registry
 
 
+async def get_subagent_registry() -> ProviderRegistry:
+    """Registro compartido de SUBAGENTES (Groq primero, g4f de respaldo)."""
+    global _subagent_registry
+    async with _subagent_lock:
+        if _subagent_registry is None:
+            from .backends import build_subagent_registry
+            _subagent_registry = await build_subagent_registry(probe=True)
+    return _subagent_registry
+
+
 def set_registry(reg: ProviderRegistry) -> None:
     """Inyección para tests (evita tocar la red)."""
     global _registry
     _registry = reg
+
+
+def set_subagent_registry(reg: ProviderRegistry) -> None:
+    """Inyección para tests del registro de subagentes."""
+    global _subagent_registry
+    _subagent_registry = reg
 
 
 class FreeCloudLLM:
@@ -122,7 +143,11 @@ class FreeCloudLLM:
         # model="gpt-4o-mini" en los tres, y eso los mandaba a los tres a la
         # familia "gpt" — reproduciendo el bug de v5.0.28 una capa más arriba.
         fam = family or self._family_for(model)
-        prefer = f"g4f-{fam}" if fam != "auto" else None
+        # Se prefiere por FAMILIA, no por id: el registro resuelve la familia
+        # al backend vivo que la sirva (groq-*, y si no, g4f-*). Antes el
+        # prefijo "g4f-" estaba pegado aquí, y añadido el backend Groq habría
+        # que haber adivinado el prefijo de cada familia en cada llamador.
+        prefer = fam if fam != "auto" else None
 
         req = CompletionRequest(
             messages=[Message("system", system_prompt), Message("user", user_prompt)],

@@ -7,18 +7,20 @@ Convierte a Lilim en un analizador visual de alta fidelidad:
   1. IMÁGENES ESCANEADAS: PNG, JPEG, WEBP, BMP, TIFF.
   2. DOCUMENTOS PDF ESCANEADOS: Rasterización a alta resolución (DPI configurable),
      extracción de bloques de texto, tablas, sellos, firmas y metadatos.
-  3. INTEGRACIÓN CON VLM LOCAL (Qwen 2.5 1.5B en KoboldCpp):
-     Lee el texto incrustado y somete las páginas escaneadas a visión profunda
-     para extraer tablas, formularios, notas manuscritas o diagramas técnicos.
+  3. VISION PROFUNDA POR NUBE DE SUBAGENTES (Groq scout con GROQ_API_KEY;
+     g4f sin clave): lee el texto incrustado y somete las páginas escaneadas
+     a visión para extraer tablas, formularios, notas manuscritas o diagramas.
+     Hasta v5.27.1 esto lo hacía un VLM local (KoboldCpp): prohibido los
+     modelos locales desde el mandato de 2026-09-27.
 """
 from __future__ import annotations
 
+import base64
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .cliente_kobold import ClienteKobold
 from .rapida import hechos_de_imagen
 
 logger = logging.getLogger(__name__)
@@ -118,21 +120,33 @@ def extraer_texto_y_layout_pdf(pdf_path: str | Path, max_paginas: int = 10) -> t
         return "", [], 1
 
 
+async def _vlm_nube(prompt: str, datos_png: bytes) -> str:
+    """Visión por el registro de SUBAGENTES (Groq scout → g4f). Cadena vacía
+    si no hay motor: el llamador deja el análisis VLM en blanco y el
+    resultado determinista (texto/layout) sigue valiendo por sí mismo."""
+    from ...core.providers.cloud import FreeCloudLLM, get_subagent_registry
+    url = "data:image/png;base64," + base64.b64encode(datos_png).decode("ascii")
+    try:
+        desc, motor = await FreeCloudLLM(
+            registry=await get_subagent_registry()).generate_vision(
+            "Analiza la imagen como un escáner de precisión.", prompt, url)
+    except Exception as e:  # noqa: BLE001 — degrada sin romper el análisis
+        logger.debug("[ojos] visión de subagentes no disponible: %s", e)
+        return ""
+    return desc if motor and not motor.startswith("SYSTEM") else ""
+
+
 async def analizar_documento_escaneado(
     ruta_archivo: str | Path,
     instruccion: str = "Extrae todo el texto visible, tablas, firmas y datos clave con precisión de Google Lens",
-    cliente: ClienteKobold | None = None,
 ) -> ResultadoLens:
     """
     Función de percepción visual de alta gama para imágenes o PDFs escaneados.
-    Combina análisis estático de capas y consulta al VLM local si está activo.
+    Análisis determinista de capas + visión de nube de subagentes si hay motor.
     """
     p = Path(ruta_archivo)
     if not p.exists():
         return ResultadoLens(tipo="error", ruta=str(p), analisis_vlm="El archivo no existe")
-
-    cli = cliente or ClienteKobold()
-    vlm_activo = await cli.esta_disponible(timeout=0.8)
 
     extension = p.suffix.lower()
     if extension == ".pdf":
@@ -145,8 +159,9 @@ async def analizar_documento_escaneado(
             bloques_layout=bloques,
         )
 
-        # Si el PDF no tiene texto digital (es escaneado puro) o si se pide análisis VLM:
-        if vlm_activo and total_pags > 0:
+        # Si el PDF no tiene texto digital (es escaneado puro): la página
+        # rasterizada pasa por la visión de subagentes.
+        if not texto.strip() and total_pags > 0:
             png_bytes = rasterizar_pagina_pdf(p, num_pagina=0, dpi=150)
             if png_bytes:
                 prompt = (
@@ -155,9 +170,7 @@ async def analizar_documento_escaneado(
                     f"Analiza la siguiente página escaneada. Identifica el título, remitente/autor, "
                     f"fechas, importes, tablas de datos y sellos o firmas presentes."
                 )
-                vlm_resp = await cli.vision(prompt, png_bytes, max_tokens=450)
-                if vlm_resp:
-                    resultado.analisis_vlm = vlm_resp
+                resultado.analisis_vlm = await _vlm_nube(prompt, png_bytes)
         return resultado
 
     # Si es imagen (PNG, JPG, BMP, etc.)
@@ -169,13 +182,17 @@ async def analizar_documento_escaneado(
         dimensiones=hechos.get("dimensiones", []),
     )
 
-    if vlm_activo:
+    try:
+        datos = p.read_bytes()
+    except OSError:
+        datos = b""
+    if datos:
         prompt = (
             f"Como escáner OCR y clasificador visual avanzado (Google Lens):\n"
             f"Instrucción: {instruccion}\n"
             f"Transcribe con exactitud el texto de la imagen, preservando tablas, listas y datos relevantes."
         )
-        vlm_resp = await cli.vision(prompt, p, max_tokens=450)
+        vlm_resp = await _vlm_nube(prompt, datos)
         if vlm_resp:
             resultado.analisis_vlm = vlm_resp
             resultado.texto_crudo = vlm_resp

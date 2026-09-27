@@ -1,5 +1,15 @@
 """
-Compila y publica una versión SIN gastar un minuto de GitHub Actions.
+RESCATE DE RELEASE — publica SIN Actions. NO es la vía normal (v5.28.0).
+
+LA VÍA NORMAL ES EL TAG: `git tag vX.Y.Z && git push origin vX.Y.Z`, y
+`release.yml` compila, prueba (suite sobre el lock en Windows + `--selftest`
+del binario) y publica. Este script existe para UN caso: Actions
+indisponible (cuota agotada, GitHub caído) y necesitas publicar HOY.
+
+Se llama "rescate" —antes era `publicar.py`— para que nadie lo confunda con
+la receta: dos recetas para el mismo binario es una que se queda atrás, y ya
+pasó (los releases v5.26-v5.27.1 salieron por esta vía local y el workflow de
+Actions derivó sin que nada lo dijera).
 
 POR QUÉ EXISTE
 ==============

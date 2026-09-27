@@ -490,13 +490,23 @@ def test_las_notas_de_la_release_no_estan_congeladas_en_el_workflow():
     las novedades de v5.0.28. Cada versión nueva habría publicado la misma
     lista, describiendo cosas que ya no son las novedades. Una release que
     miente sobre lo que trae es peor que una sin notas.
+
+    v5.28.0 dio un paso más: `body_path` ya no es RELEASE_NOTES.md entero
+    (48 KB acumulados publicados en CADA release) sino `dist/NOTAS.md`, la
+    SECCIÓN del tag extraída del fichero. Este test congela ese contrato:
+    extracción por tag + body desde el fichero extraído, nunca `body` a mano.
     """
     import yaml
     wf = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8"))
     pasos = wf["jobs"]["build"]["steps"]
     crear = next(s for s in pasos if s.get("name") == "Create Release")
     assert "body" not in crear["with"], "el cuerpo vuelve a estar incrustado"
-    assert crear["with"].get("body_path") == "RELEASE_NOTES.md"
+    assert crear["with"].get("body_path") == "dist/NOTAS.md"
+    extraer = next(s for s in pasos
+                   if s.get("name") == "Notas de ESTA versión")
+    assert "RELEASE_NOTES.md" in extraer["run"], (
+        "las notas por tag se extraen de RELEASE_NOTES.md: sin fichero "
+        "fuente, la extracción es un cuerpo inventado")
     assert (ROOT / "RELEASE_NOTES.md").exists()
 
 
@@ -504,13 +514,16 @@ def test_la_release_adjunta_el_exe_dentro_de_un_zip():
     import yaml
     wf = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8"))
     pasos = wf["jobs"]["build"]["steps"]
-    comprimir = next(s for s in pasos if s.get("name") == "Zip Release")
+    comprimir = next(s for s in pasos if s.get("name") == "Zip Release (versionado)")
     assert ".exe" in comprimir["run"] and ".zip" in comprimir["run"]
     crear = next(s for s in pasos if s.get("name") == "Create Release")
-    # El zip del binario Y los checksums SHA256 para verificar la descarga
-    # (el .exe no está firmado: la integridad verificable es lo que hay).
+    # El zip del binario (CON LA VERSIÓN EN EL NOMBRE: hasta v5.27.1 el asset
+    # se llamaba igual en cada release y no distinguía nada) y los checksums
+    # SHA256 para verificar la descarga (el .exe no está firmado: la
+    # integridad verificable es lo que hay).
     files = crear["with"]["files"]
-    assert "Magisys.zip" in files and "CHECKSUMS.txt" in files
+    assert "dist/Magisys-v${{ env.VERSION }}-win64.zip" in files \
+        and "dist/CHECKSUMS.txt" in files
     checksums = next(s for s in pasos if s.get("name") == "Checksums SHA256")
     assert "SHA256" in checksums["run"]
 

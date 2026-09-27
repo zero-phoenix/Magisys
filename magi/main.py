@@ -164,14 +164,111 @@ def _start_magi_background(magi, loop):
     except Exception as e:
         logger.error(f"Error fatal en el loop secundario: {e}")
 
+
+def _selftest() -> int:
+    """
+    Prueba de humo del BINARIO, no del repo (v5.28.0 — la compuerta del
+    release la ejecuta sobre dist/Magisys.exe en el runner de Windows).
+
+    Lo que comprueba, en orden de lo que más duele cuando falla:
+      1. Los módulos del núcleo importan DENTRO del congelado.
+      2. El catálogo de proveedores viajó y es legible.
+      3. El registro del enjambre arma sin excepciones y SIN Groq (el
+         enjambre es g4f puro; sin red — `available()` de g4f no toca red).
+      4. El registro de SUBAGENTES arma; con clave, Groq está disponible.
+      5. SOLO EN EL BINARIO: el Python embebido ejecuta un subproceso real.
+         Es la prueba de «funciona en cualquier PC»: un exe sin intérprete
+         interno arranca bien y muere a mitad, que es lo peor que puede
+         publicarse.
+    Sale 0 si todo bien; 1 con el primer fallo, diciendo cuál.
+    """
+    print("[selftest] 1/5 imports del núcleo…")
+    import magi.core.agent_loop  # noqa: F401 — importar ES la prueba
+    import magi.core.context  # noqa: F401
+    import magi.core.paths  # noqa: F401
+    import magi.core.prompts  # noqa: F401
+    import magi.core.providers.registry  # noqa: F401
+    import magi.core.router  # noqa: F401
+    print("[selftest]   núcleo importado")
+
+    print("[selftest] 2/5 catálogo de proveedores…")
+    # `cargar_bruto()` ya sabe distinguir el catálogo del usuario
+    # (%LOCALAPPDATA%) del empaquetado (repo / _MEIPASS): resolverlo a mano
+    # aquí era repetir esa lógica — y mal, como acaba de demostrar el fallo.
+    from magi.core.providers.catalogo import cargar_bruto
+    catalogo, origen_cat = cargar_bruto()
+    assert catalogo, "el catálogo de proveedores no se pudo cargar"
+    assert catalogo.get("schemaVersion") == 1, "schemaVersion del catálogo != 1"
+    assert catalogo.get("familias"), "catálogo sin familias"
+    print(f"[selftest]   catálogo ok "
+          f"({len(catalogo['familias'])} familias, {origen_cat.name})")
+
+    async def _registros():
+        from magi.core.providers.cloud import get_registry, get_subagent_registry
+        return await get_registry(), await get_subagent_registry()
+
+    print("[selftest] 3/5 registro del enjambre (g4f, sin Groq)…")
+    enjambre, subagentes = asyncio.run(_registros())
+    fams = enjambre.families_available()
+    assert fams, "el registro del enjambre no tiene NI UNA familia sana"
+    groq_en_enjambre = [f for f in fams if f.startswith("groq-")]
+    assert not groq_en_enjambre, (
+        f"Groq coló en el ENJAMBRE ({groq_en_enjambre}): es solo-subagente")
+    print(f"[selftest]   enjambre ok ({', '.join(fams)})")
+
+    print("[selftest] 4/5 registro de subagentes (Groq primero)…")
+    from magi.core.providers.backends.groq_backend import _clave_de_fichero
+    hay_clave = bool(os.environ.get("GROQ_API_KEY") or _clave_de_fichero())
+    fams_sub = subagentes.families_available()
+    assert fams_sub, "registro de subagentes sin ninguna familia sana"
+    motor = [f for f in fams_sub if f.startswith("groq-")]
+    print(f"[selftest]   subagentes ok (clave Groq: "
+          f"{'sí' if hay_clave else 'NO — caen a g4f'}; "
+          f"motor: {', '.join(motor) or 'g4f'})")
+
+    print("[selftest] 5/5 Python embebido…")
+    if getattr(sys, "frozen", False):
+        base = getattr(sys, "_MEIPASS", os.path.abspath("."))
+        py = os.path.join(base, "assets", "python-embed", "extracted",
+                          "python.exe")
+        if not os.path.isfile(py):
+            print(f"[selftest]   FALTA el intérprete embebido: {py}")
+            return 1
+        import subprocess
+        prueba = subprocess.run(
+            [py, "-c", "import sys; print(sys.version_info[:2])"],
+            capture_output=True, text=True, timeout=60)
+        if prueba.returncode != 0:
+            print(f"[selftest]   el intérprete embebido falló: "
+                  f"{prueba.stderr.strip()[:200]}")
+            return 1
+        print(f"[selftest]   embebido ok "
+              f"({prueba.stdout.strip()}): el exe funciona sin Python instalado")
+    else:
+        print("[selftest]   modo desarrollo: el embebido se prueba en el binario")
+
+    print("SELFTEST OK")
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description="Magisys Bootstrapper")
     parser.add_argument("--host", default="127.0.0.1", help="Host para el GUI Server (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=20128, help="Puerto para el GUI Server (default: 20128)")
     parser.add_argument("--gui-port", type=int, default=1420, help="Puerto HTTP local para el Frontend (default: 1420)")
     parser.add_argument("--debug", action="store_true", help="Habilitar logs de depuración")
+    parser.add_argument("--selftest", action="store_true",
+                        help="Prueba de humo del binario y sale. Sin ventana, sin red real: "
+                             "lo ejecuta el release antes de publicar el .exe.")
 
     args = parser.parse_args()
+
+    if args.selftest:
+        try:
+            sys.exit(_selftest())
+        except Exception as e:  # noqa: BLE001 — el selftest REPORTA, no propaga
+            print(f"SELFTEST FALLO: {type(e).__name__}: {e}")
+            sys.exit(1)
 
     magi = MagiSystem(host=args.host, port=args.port, debug=args.debug)
 
@@ -184,9 +281,9 @@ def main():
     magi_thread = threading.Thread(target=_start_magi_background, args=(magi, magi_loop), daemon=True)
     magi_thread.start()
 
-    import os
-    import sys
-
+    # `os` y `sys` ya son imports del módulo: redeclararlos aquí convertía
+    # `sys` en variable LOCAL de main() para todo el ámbito, y el
+    # `sys.exit(_selftest())` de arriba reventaba con UnboundLocalError.
     def get_resource_path(relative_path):
         """ Get absolute path to resource, works for dev and for PyInstaller """
         try:

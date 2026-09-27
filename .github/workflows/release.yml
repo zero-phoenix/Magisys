@@ -1,5 +1,29 @@
 name: Build and Release Magisys
 
+# LA COMPUERTA (v5.28.0): este workflow es la ÚNICA vía de publicación, y
+# prueba EXACTAMENTE lo que publica:
+#
+#   1. El job `test` (ubuntu, requirements.txt) comprueba que el proyecto
+#      sigue vivo con las versiones de HOY — donde quieres enterarte de que
+#      un upstream rompió algo.
+#   2. El job `build` (windows) instala requirements.lock, corre la suite
+#      rápida SOBRE ESE LOCK, compila el .exe con él y EJECUTA el .exe
+#      (`--selftest`) antes de publicar. La suite que aprueba el binario es
+#      la del binario: mismo intérprete, mismas dependencias, misma
+#      plataforma. Hasta v5.27.1 el gate corría en ubuntu, donde los tests
+#      que compilan un .exe se saltan solos: verde sin probar lo publicado.
+#   3. tag == versión de pyproject.toml, bloqueante. Una versión, una
+#      fuente de verdad (v5.27.0 en pyproject vs tag v5.27.1 no puede
+#      volver a pasar desapercibida).
+#
+# Este contrato lo vigila tests/test_la_compuerta.py: si alguien debilita la
+# receta (un `if:` que salte el selftest, un paso no bloqueante, quitar la
+# suite del lock), el CI se pone en rojo.
+#
+# La vía local (antes scripts/publicar.py) queda como rescate de emergencia
+# documentado: scripts/rescate_release.py. DOS RECETAS NO: una receta y un
+# rescate con su nombre puesto.
+
 on:
   push:
     tags:
@@ -9,48 +33,58 @@ on:
       tag:
         description: 'Etiqueta a publicar (debe existir como tag git)'
         required: true
-        default: 'v5.1.1'
+        default: 'v5.28.0'
 
 permissions:
   contents: write
 
+# Un release por tag: jamás se cancela un release en curso.
+concurrency:
+  group: release-${{ github.ref }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
     - uses: actions/checkout@v4
       with:
         ref: ${{ env.RELEASE_TAG }}
+
+    - name: El tag y pyproject dicen la misma versión (bloqueante)
+      run: |
+        v=$(python3 -c 'import re; print(re.search(r"^version\s*=\s*\"([^\"]+)\"", open("pyproject.toml", encoding="utf-8").read(), re.M).group(1))')
+        if [ "v$v" != "${RELEASE_TAG}" ]; then
+          echo "::error::tag ${RELEASE_TAG} != v$v de pyproject.toml — una versión, una fuente de verdad"
+          exit 1
+        fi
+        echo "VERSION=$v" >> "$GITHUB_ENV"
+
     - uses: actions/setup-python@v5
       with:
         python-version: '3.11'
         cache: 'pip'
+
     # De requirements.txt, nunca a mano: ver la nota en ci.yml. Enumerar aquí
-    # es lo que dejó este mismo job sin `websockets` y sin `numpy`, y este job
+    # es lo que dejó este job sin `websockets` y sin `numpy`, y este job
     # es el que decide si hay .exe.
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+
     - name: Install ffmpeg
       run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
     - name: Run test suite
       run: python -m pytest tests/ -v
+
     - name: Verify no absolute machine paths
-      # ESTE PASO NO COMPROBABA NADA, Y ESO ES PEOR QUE NO TENERLO.
-      #
-      # El patrón iba entre comillas DOBLES: el shell dejaba `\|` (que en ERE
-      # es un pipe LITERAL, no alternancia) y convertía `\\\\` en `\\` (una
-      # barra literal). Resultado: grep buscaba la cadena única
-      # `D:/PROYECTOS|d:/PROYECTOS|C:\Users\[A-Za-z]`, que no existe en ningún
-      # fichero. Verde siempre, sin mirar. Con comillas simples el patrón
-      # llega intacto a grep.
-      #
-      # Y se generaliza: la ruta que rompe el .exe no es solo `D:/PROYECTOS`
-      # —este repo ha vivido en tres carpetas distintas—, es cualquier ruta
-      # absoluta de una máquina concreta.
+      # Con comillas simples el patrón llega intacto a grep (ver la historia
+      # en el propio fichero: entre comillas dobles, `\|` era un pipe LITERAL
+      # y el paso estaba siempre en verde sin comprobar nada).
       run: |
         if grep -rnE '[A-Za-z]:[\\/](PROYECTOS|Users|Games Only)' \
              --include='*.py' --include='*.json' --include='*.toml' \
@@ -64,9 +98,8 @@ jobs:
   build:
     runs-on: windows-latest
     needs: test          # sin tests verdes no hay release
+    timeout-minutes: 60
     env:
-      # En push de tag vale github.ref_name ("v5.1.1"); en dispatch manual
-      # tomamos el input. Así un mismo workflow sirve para ambas vías.
       RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
     steps:
@@ -75,18 +108,23 @@ jobs:
       with:
         ref: ${{ env.RELEASE_TAG }}
 
+    - name: El tag y pyproject dicen la misma versión (bloqueante)
+      run: |
+        $v = (python -c 'import re; print(re.search(r"^version\s*=\s*\"([^\"]+)\"", open("pyproject.toml", encoding="utf-8").read(), re.M).group(1))')
+        if ("v$v" -ne "$env:RELEASE_TAG") {
+          Write-Host "::error::tag $env:RELEASE_TAG != v$v de pyproject.toml"
+          exit 1
+        }
+        "VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
         cache: 'pip'
 
-    # Node 22 y `npm ci`, EXACTAMENTE igual que el job `gui` de ci.yml. Antes
-    # este job usaba Node 20 con `npm install`: dos diferencias con lo que CI
-    # deja en verde, y cualquiera de las dos puede tumbar el release de un
-    # commit ya probado. Vite 7 exige `^20.19.0 || >=22.12.0`, así que un
-    # `node-version: '20'` que resolviera a 20.18 fallaría; y `npm install`
-    # ignora el lock y puede instalar versiones distintas de las probadas.
+    # Node 22 y `npm ci`, EXACTAMENTE igual que el job `gui` de ci.yml. Vite 7
+    # exige `^20.19.0 || >=22.12.0`, y `npm install` ignora el lock.
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
@@ -94,25 +132,26 @@ jobs:
         cache: 'npm'
         cache-dependency-path: magi-gui/package-lock.json
 
-    # DEL LOCK, NO DE requirements.txt — y la diferencia con el job `test` de
-    # arriba es deliberada, no un descuido.
-    #
-    # El job `test` instala de requirements.txt: prueba que el proyecto sigue
-    # funcionando con las versiones de HOY, que es donde quieres enterarte de
-    # que un upstream ha roto algo.
-    #
-    # Este job compila el binario que se PUBLICA. Aquí no se quiere la última
-    # versión: se quiere exactamente la que se probó. Sin lock, recompilar este
-    # mismo tag dentro de seis meses produce un .exe distinto, y una versión
-    # publicada que no se puede reproducir no se puede depurar.
-    #
-    # El lock es de Windows (lleva pythonnet/clr-loader, de pywebview) y por eso
-    # solo se usa aquí. Ver la cabecera de requirements.lock.
+    # DEL LOCK: este job compila el binario que se PUBLICA. Aquí no se quiere
+    # la última versión: se quiere exactamente la que se probó. Ver la
+    # cabecera del workflow: hasta v5.27.1, el gate probaba OTRAS versiones
+    # en OTRA plataforma.
     - name: Install Python dependencies (bloqueadas)
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.lock
         pip install pyinstaller pywebview
+
+    # ffmpeg ANTES de la suite: en Windows, sin ffmpeg los tests de vídeo no
+    # se saltan — FALLAN, porque comprueban el mensaje de "no existe el punto
+    # de entrada" y recibían "ffmpeg no está instalado" (ver ci.yml).
+    - name: Install ffmpeg
+      run: choco install ffmpeg -y --no-progress
+
+    # LA COMPUERTA: la suite rápida corre en ESTE job, en Windows, sobre el
+    # lock con el que se compilará el .exe. Sin este verde no hay binario.
+    - name: Run test suite (desde el lock, en Windows)
+      run: python -m pytest tests/ -q --tb=short -m "not slow"
 
     - name: Build Frontend
       working-directory: ./magi-gui
@@ -120,87 +159,78 @@ jobs:
         npm ci
         npm run build
 
-    # SE COMPILA CON EL .spec, NO CON LA LÍNEA DE COMANDOS
-    # ===================================================
-    # Antes esta receta iba escrita a mano aquí, y `Magisys.spec` se usaba
-    # solo en local. Dos recetas para el mismo binario es una que se queda
-    # atrás, y ya pasó: al externalizar el catálogo de proveedores se añadió
-    # `--add-data "magi/data;magi/data"` al .spec, y esta línea no se enteró.
-    # El .exe publicado habría arrancado con el respaldo de las constantes —
-    # funciona, pero pierde justo lo que se buscaba: poder arreglar un
-    # proveedor caído sin recompilar 158 MB.
-    #
-    # Con el .spec hay una sola receta y esta clase de deriva no puede ocurrir.
-    # Los `--exclude-module` (torch y compañía) también viven ahí: entran de
-    # polizón por g4f/tools/files.py -> markitdown -> magika -> onnxruntime, y
-    # además de hinchar el binario colgaban la compilación indefinidamente en
-    # torch/__init__.py:265.
+    # SE COMPILA CON EL .spec, NO CON LA LÍNEA DE COMANDO: una sola receta.
+    # (La historia completa de por qué, en el historial del fichero.)
     - name: Build Executable (PyInstaller, desde el .spec)
       run: pyinstaller --clean --noconfirm Magisys.spec
 
     - name: Verificar que lo que hace falta viajó dentro
-      # Las tres cosas que un .exe puede perder SIN dar error al arrancar, que
-      # es lo que las hace peligrosas: se publicaría un binario que parece
-      # bueno y hace la mitad.
+      # Las tres cosas que un .exe puede perder SIN dar error al arrancar,
+      # que es lo que las hace peligrosas: se publicaría un binario que
+      # parece bueno y hace la mitad.
       run: |
         if (-not (Test-Path "magi/data/catalogo_proveedores.json")) {
           throw "falta magi/data/catalogo_proveedores.json en el repo"
         }
-
-        # El Python embebido. Sin él, `sys.executable` dentro del onefile es el
-        # propio .exe y el binario se queda sin intérprete: run_tests,
-        # python_exec, la verificación de propuestas y el bucle de observación
-        # dejan de poder trabajar. El sistema lo DICE en vez de fingir, así que
-        # el fallo no se ve al arrancar — solo cuando intentas usarlo.
         if (-not (Test-Path "assets/python-embed/extracted/python.exe")) {
           throw "falta el Python embebido (assets/python-embed/extracted): el .exe no podria ejecutar nada"
         }
-
         if (-not (Test-Path "dist/Magisys.exe")) {
           throw "PyInstaller no produjo el .exe"
         }
-
-        # QUE EL EMBEBIDO ESTÉ EN EL REPO NO PRUEBA QUE ENTRARA EN EL BINARIO.
-        #
-        # Se comprueba en el inventario que PyInstaller deja al empaquetar, que
-        # es evidencia directa de lo que viajó dentro. La primera versión de
-        # esta comprobación usaba el tamaño del .exe como proxy y se equivocó:
-        # puse el suelo en 120 MB razonando «94 MB que pesaba antes + 43 del
-        # embebido», y el binario salió a 107,3 porque dentro va comprimido.
-        # Sumar tamaños en disco para predecir el de un archivo comprimido es
-        # inventarse un número — y tumbó un build correcto.
         $toc = "build/Magisys/Analysis-00.toc"
         if (-not (Test-Path $toc)) { throw "no encuentro el inventario $toc" }
         if (-not (Select-String -Path $toc -Pattern "python-embed" -Quiet)) {
-          throw "el Python embebido NO entro en el binario: el .exe publicado no podria ejecutar nada"
+          throw "el Python embebido NO entro en el binario"
         }
         Write-Host "python embebido: dentro del binario (verificado en el inventario)"
 
-        # Y un suelo de tamaño, ahora sí MEDIDO y no calculado: 94,1 MB sin
-        # embebido (v5.2.0) y 107,3 con él (v5.3.0). 100 queda entre los dos.
         $mb = [math]::Round((Get-Item "dist/Magisys.exe").Length / 1MB, 1)
         Write-Host "exe: $mb MB"
         if ($mb -lt 100) { throw "el .exe pesa $mb MB: se quedo algo fuera" }
 
-    - name: Zip Release
-      # El usuario descarga un .zip, no el .exe suelto: Windows y muchos
-      # navegadores bloquean o avisan sobre un .exe descargado directamente.
+    # EL SMOKE TEST REAL (v5.28.0): el binario se EJECUTA antes de publicarse.
+    # Arranca sin ventana, valida núcleo, catálogo, ambos registros y —solo
+    # posible aquí, en el binario— que el Python EMBEBIDO corre un
+    # subproceso de verdad. «El exe pesa lo que debe» no implica «el exe
+    # arranca»; esto sí lo prueba.
+    - name: Smoke test del binario (--selftest)
+      run: dist/Magisys.exe --selftest
+      shell: pwsh
+
+    - name: Zip Release (versionado)
+      # Un .zip con LA VERSIÓN en el nombre: hasta v5.27.1 el asset se llamaba
+      # igual en cada release (MAGI-IDE-v5.zip) y no distinguía nada.
       run: |
-        Compress-Archive -Path "dist/Magisys.exe" -DestinationPath "dist/Magisys.zip" -Force
-        $z = [math]::Round((Get-Item "dist/Magisys.zip").Length / 1MB, 1)
-        Write-Host "zip: $z MB"
+        $z = "dist/Magisys-v$env:VERSION-win64.zip"
+        Compress-Archive -Path "dist/Magisys.exe" -DestinationPath $z -Force
+        $mb = [math]::Round((Get-Item $z).Length / 1MB, 1)
+        Write-Host "zip: $mb MB -> $z"
 
     - name: Checksums SHA256
-      # El binario no está firmado y SmartScreen asusta; lo que SÍ se puede
-      # garantizar es la integridad: quien descargue puede verificar con
-      # `certutil -hashfile Magisys.zip SHA256` contra CHECKSUMS.txt.
-      # Se generan del .zip Y del .exe interno por si alguien descomprime.
       run: |
-        $h1 = (Get-FileHash "dist/Magisys.zip" -Algorithm SHA256).Hash
+        $z = "dist/Magisys-v$env:VERSION-win64.zip"
+        $h1 = (Get-FileHash $z -Algorithm SHA256).Hash
         $h2 = (Get-FileHash "dist/Magisys.exe" -Algorithm SHA256).Hash
-        "$($h1.ToLower())  Magisys.zip"  | Out-File dist/CHECKSUMS.txt -Encoding ascii -Append
+        "$($h1.ToLower())  Magisys-v$env:VERSION-win64.zip" | Out-File dist/CHECKSUMS.txt -Encoding ascii
         "$($h2.ToLower())  Magisys.exe"  | Out-File dist/CHECKSUMS.txt -Encoding ascii -Append
         Get-Content dist/CHECKSUMS.txt
+
+    - name: Notas de ESTA versión
+      # Solo la sección del tag, no el RELEASE_NOTES.md entero (48 KB en cada
+      # release: nadie puede distinguir qué cambió en esta). Si el tag no
+      # tiene sección, se nota y se usa el autogenerado — nunca mentir.
+      run: |
+        python -c "import sys; from pathlib import Path; import re
+        notas = Path('RELEASE_NOTES.md').read_text(encoding='utf-8')
+        tag = '$env:RELEASE_TAG'
+        m = re.search(rf'(?ms)^# {re.escape(tag)}\b.*?(?=^\# |\Z)', notas)
+        if m:
+            Path('dist/NOTAS.md').write_text(m.group(0).strip() + '\n', encoding='utf-8')
+            print('notas extraidas para', tag)
+        else:
+            Path('dist/NOTAS.md').write_text(f'({tag} sin seccion en RELEASE_NOTES.md — ver commits)\n', encoding='utf-8')
+            print('AVISO: sin seccion para', tag)"
 
     - name: Create Release
       uses: softprops/action-gh-release@v2
@@ -208,9 +238,9 @@ jobs:
         tag_name: ${{ env.RELEASE_TAG }}
         name: "Magisys ${{ env.RELEASE_TAG }}"
         files: |
-          dist/Magisys.zip
+          dist/Magisys-v${{ env.VERSION }}-win64.zip
           dist/CHECKSUMS.txt
-        body_path: RELEASE_NOTES.md
+        body_path: dist/NOTAS.md
         draft: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

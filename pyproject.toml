@@ -6,7 +6,7 @@
 
 [project]
 name = "Magisys"
-version = "5.27.0"
+version = "5.28.0"
 description = "Entorno de desarrollo con un enjambre de tres inteligencias que debaten antes de actuar."
 requires-python = ">=3.10"
 

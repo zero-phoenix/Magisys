@@ -13,8 +13,8 @@ name: CI
 #   "The job was not started because recent account payments have failed or
 #    your spending limit needs to be increased."
 #
-# Este repositorio es PRIVADO, así que los minutos se pagan. Y medido sobre la
-# última corrida verde:
+# Este repositorio pasa temporadas PRIVADO, así que los minutos se pagan. Y
+# medido sobre la última corrida verde:
 #
 #   test (windows-latest, 3.11)   9,2 min x2 = 18,4 facturables
 #   test (windows-latest, 3.10)   7,0 min x2 = 14,0
@@ -42,8 +42,13 @@ name: CI
 #    comprobar algo que `release.yml` vuelve a comprobar antes de publicar.
 #
 #    NO se han eliminado: eso sería verde sin mirar, que es peor que rojo.
-#    Corren en el job `lentos` —semanal y bajo demanda— y en `release.yml`, que
-#    ya ejecuta `pytest tests/` completo y sin el cual no hay .exe.
+#    Corren en el job `lentos` —semanal y bajo demanda— y en `release.yml`,
+#    que ejecuta la suite completa y sin el cual no hay .exe.
+#
+# v5.28.0 AÑADE (sin tocar el presupuesto): `concurrency` con cancelación de
+# corridas obsoletas de la MISMA rama (push rápido tras push rápido = solo se
+# paga el último), `timeout-minutes` en todos los jobs (un cuelgue de runner
+# cobra 360 min del plan Free si nadie lo corta) y el job `canario` diario.
 #
 # Estimado tras el recorte: ~12 min por push, unos 165 pushes al mes.
 
@@ -58,10 +63,22 @@ on:
     # en la compilación del .exe conviene saberlo antes de querer publicar,
     # no el día que se publica.
     - cron: "0 4 * * 0"
+    # Diario a las 4:35 UTC: el canario de proveedores. «La nube gratuita
+    # sigue viva» y «los subagentes Groq responden» son hipótesis: se miden
+    # cada día, no se dan por sentadas. Falla en rojo, y GitHub avisa.
+    - cron: "35 4 * * *"
+
+# Un CI vivo por rama: el push nuevo cancela las corridas obsoletas de esa
+# misma rama. Ahorra minutos reales sin saltarse nada (el último estado de la
+# rama siempre se prueba entero).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     # Tres combinaciones, no cuatro, y no es por ahorrar sin más: Windows
     # cuesta el doble de minutos y el segundo job de Windows no comprobaba
     # nada que los otros tres no comprueben ya. Ver la cabecera del fichero.
@@ -152,6 +169,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
@@ -173,7 +191,7 @@ jobs:
       # El resto SÍ bloquea: si esto falla, es un error real, no estilo.
       #
       # `scripts/` entró el 2026-09-06 y no por gusto: estaba FUERA del lint
-      # desde siempre, y ahí viven verificar.py, publicar.py y huerfanos.py
+      # desde siempre, y ahí viven verificar.py, rescate_release.py y huerfanos.py
       # — la compuerta, el publicador y un trinquete. Un script que decide si
       # se publica no puede ser el único código sin revisar. Al añadirlo
       # aparecieron 7 errores, todos en el interactuar_magi.py recién
@@ -242,6 +260,7 @@ jobs:
     # para la mitad del sistema: 443 tests en Python y CERO en la interfaz.
     # El diff de aprobación llevaba meses sin mostrar nada y nada lo detectó.
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: magi-gui
@@ -277,8 +296,9 @@ jobs:
   # Solo Windows: los .exe se compilan en Windows y en Linux estos tests se
   # saltan, así que un job de Ubuntu aquí sería verde sin comprobar nada.
   lentos:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'schedule' && github.event.schedule == '0 4 * * 0' || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
@@ -293,3 +313,36 @@ jobs:
       run: choco install ffmpeg -y --no-progress
     - name: Tests que compilan artefactos
       run: python -m pytest tests/ -v --tb=short -m "slow"
+
+  # ---------------------------------------------------------------------------
+  # CANARIO DIARIO (v5.28.0)
+  # ---------------------------------------------------------------------------
+  # «La nube gratuita sigue viva», «los subagentes Groq responden» y «el
+  # catálogo no está agotado» son HIPÓTESIS sobre terceros que cambian solos:
+  # el 2026-08-13, cinco de seis familias «verificadas» una semana antes
+  # estaban rotas. Este job las mide cada día con una llamada REAL y se pone
+  # en rojo — GitHub avisa por correo de los fallos en schedule.
+  #
+  # Solo corre en el schedule diario y bajo demanda: jamás en push/PR, donde
+  # un proveedor caído tumbaría el CI de un commit que no tiene la culpa.
+  canario:
+    if: github.event_name == 'schedule' && github.event.schedule == '35 4 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    # La clave de Groq viaja en el repositorio (decisión del propietario):
+    # el canario la lee del fichero; el entorno GROQ_API_KEY, si existiera,
+    # ganaría. Sin clave, la parte Groq se declara NO PROBADA, no en verde.
+    - name: Canario de proveedores (enjambre g4f + subagentes Groq)
+      env:
+        MAGI_CANARIO: '1'
+      run: python -m pytest tests/test_canario_proveedores.py -v --tb=short

@@ -1,13 +1,20 @@
 """
 Backends de inferencia.
 
-RESTRICCIÓN DEL PROYECTO (confirmada por el usuario, y ya presente en §I.3 del
-documento de arquitectura): **solo IA de nube gratuita, sin claves de API y sin
-modelos locales**. No hay backend de Ollama, ni de OpenRouter con clave, ni de
-CLIs de suscripción. Todo pasa por g4f.
+RESTRICCIÓN DEL PROYECTO (§I.3 + mandatos del usuario de 2026-09-27):
+  · **Solo IA de nube, jamás modelos locales** (el tripwire
+    tests/test_nunca_modelos_locales.py impide que un KoboldCpp/Ollama vuelva).
+  · El ENJAMBRE PRINCIPAL —Melchior, Balthasar, Casper, Naoko, Ritsuko— corre
+    SOLO con las familias gratuitas de g4f, sin clave: es donde vive la
+    diversidad epistemológica del debate.
+  · Groq (la ÚNICA clave permitida, GROQ_API_KEY) alimenta EXCLUSIVAMENTE el
+    registro de SUBAGENTES: trabajos de solo lectura, aceleración (mielina),
+    síntesis de contexto y visión rápida. LPU: la menor latencia medible.
+    Sin clave, los subagentes caen solos a g4f y nada deja de funcionar.
 
-La diversidad del enjambre —que en v5.0.28 no existía— se consigue fijando el
-proveedor g4f por familia, no dejando el auto-router. Ver g4f_backend.py.
+La diversidad del enjambre —que en v5.0.28 no existía— se consigue fijando un
+proveedor por familia, no dejando el auto-router. Ver g4f_backend.py y
+groq_backend.py.
 """
 from .echo import EchoProvider
 from .g4f_backend import (
@@ -16,10 +23,12 @@ from .g4f_backend import (
     G4FProvider,
     build_swarm_providers,
 )
+from .groq_backend import GroqProvider, build_groq_providers
 
 __all__ = [
-    "EchoProvider", "G4FProvider", "FAMILY_SPECS", "DEFAULT_SWARM_FAMILIES",
-    "build_swarm_providers", "build_default_registry",
+    "EchoProvider", "G4FProvider", "GroqProvider", "FAMILY_SPECS",
+    "DEFAULT_SWARM_FAMILIES", "build_swarm_providers", "build_groq_providers",
+    "build_default_registry", "build_subagent_registry",
 ]
 
 # Orden de preferencia entre familias.
@@ -52,8 +61,12 @@ _PRIORITY = {
 
 async def build_default_registry(*, probe: bool = True, families=None):
     """
-    Registra una familia por backend para que ProviderRegistry pueda repartir
-    familias distintas entre Melchior, Balthasar y Casper.
+    Registro del ENJAMBRE PRINCIPAL: SOLO g4f, sin clave y sin Groq.
+
+    Groq queda fuera a propósito (mandato 2026-09-27): Melchior, Balthasar,
+    Casper, Naoko y Ritsuko debaten con familias gratuitas DIVERSAS — el valor
+    epistemológico del debate depende de sesgos distintos, no del motor más
+    rápido. Los subagentes tienen su propio registro: build_subagent_registry.
 
     `auto` (el auto-router de g4f, que es lo único que usaba v5.0.28) queda
     registrado en última posición: sigue siendo la red de seguridad, pero deja
@@ -64,6 +77,32 @@ async def build_default_registry(*, probe: bool = True, families=None):
     reg = ProviderRegistry()
     for family in (families or FAMILY_SPECS.keys()):
         reg.register(G4FProvider(family=family), priority=_PRIORITY.get(family, 80))
+    if probe:
+        await reg.probe_all()
+    return reg
+
+
+async def build_subagent_registry(*, probe: bool = True):
+    """
+    Registro de SUBAGENTES: Groq primero, g4f de respaldo.
+
+    Aquí SÍ quiere el motor más rápido disponible — un subagente es trabajo
+    de solo lectura con turno único, y su latencia se paga dentro del turno
+    del nodo que lo despachó. Con GROQ_API_KEY, Groq (LPU) sirve todo el
+    trabajo subordinado; sin clave, las mismas familias g4f del enjambre
+    hacen el papel y el sistema no cambia de comportamiento observable.
+
+    Las prioridades g4f empiezan en 100: en el empate sin medidas, Groq va
+    primero siempre que esté disponible.
+    """
+    from ..registry import ProviderRegistry
+
+    reg = ProviderRegistry()
+    for prio, groq in enumerate(build_groq_providers(), start=1):
+        reg.register(groq, priority=prio)
+    for family in FAMILY_SPECS.keys():
+        reg.register(G4FProvider(family=family),
+                     priority=100 + _PRIORITY.get(family, 80))
     if probe:
         await reg.probe_all()
     return reg

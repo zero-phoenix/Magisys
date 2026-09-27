@@ -1,3 +1,21 @@
+# v5.28.0 — Subagentes Groq, cero modelos locales y un release que prueba lo que publica
+
+**Qué cambia:** El trabajo subordinado de MAGI (subagentes de solo lectura, aceleración dialéctica, visión rápida) corre ahora en un registro propio con **Groq como motor** — la única clave de API permitida en el proyecto, LPU, la menor latencia medible — y las familias gratuitas de g4f de respaldo. La vía de inferencia local (KoboldCpp + Qwen 2.5 1.5B en la GPU del host) queda **eliminada**: jamás modelos locales, vigilado por tripwire de CI. Y el pipeline de publicación se reconstruye para que **la compuerta pruebe exactamente lo que publica**, con el binario ejecutándose antes de publicarse.
+
+**Lo concreto:**
+
+- **Registro de subagentes (`build_subagent_registry`):** Groq primero (familias **oss / qwen / flash**, las tres de chat medidas en la cuenta real; `httpx` puro, sin SDK extra), g4f detrás. Sin `GROQ_API_KEY`, los subagentes caen solos a la nube gratuita y nada deja de funcionar. El catálogo de modelos Groq se sobreescribe con `GROQ_MODELS` sin recompilar, y los gpt-oss corren con `reasoning_effort=low` (medido: sin él, un techo corto de tokens devuelve contenido vacío — el razonador se come el presupuesto).
+- **El enjambre sigue SIENDO g4f puro:** Melchior, Balthasar, Casper, Naoko y Ritsuko no tocan Groq — la diversidad epistemológica del debate se conserva en familias gratuitas distintas. `tests/test_groq_solo_subagente.py` congela esa frontera.
+- **Subagentes que no mienten:** el stub que devolvía «verificado sin hallazgos críticos» sin comprobar nada queda reemplazado por inferencia real; sin motor, el subagente lo declara (`exito=False`).
+- **Mielina por nube:** `lubricar_propuesta/critica/arbitraje/vision` usan el registro de subagentes con techos de reloj cortos; la pre-auditoría estática determinista (`ast`) no cambia. El puente flash pierde el motor local y la clave Z.AI (retirada: Groq es la única excepción).
+- **`Magisys.exe --selftest`:** prueba de humo real del binario — núcleo, catálogo, ambos registros y, en el congelado, **el Python embebido ejecutando un subproceso** (la prueba de «funciona en cualquier PC sin Python»). La ejecuta el release antes de publicar.
+- **La compuerta del release (ineludible):** suite rápida en **Windows sobre `requirements.lock`** (el entorno exacto del binario), gate bloqueante `tag == versión de pyproject`, asset versionado `Magisys-vX.Y.Z-win64.zip`, notas solo del tag (no 48 KB acumulados), cero pasos no bloqueantes. `tests/test_la_compuerta.py` impide que se debilite.
+- **Una sola receta:** Actions es la única vía de publicación; `publicar.py` pasa a ser `scripts/rescate_release.py`, documentado como emergencia.
+- **CI blindada:** `timeout-minutes` en todos los jobs (un runner colgado consume 360 min del plan Free), `concurrency` con cancelación de corridas obsoletas por rama, y **canario diario** (job `canario`) que mide de verdad —llamada real— si el enjambre g4f y los subagentes Groq siguen vivos, con la clave del repositorio.
+- **La clave Groq en el repositorio (decisión del propietario):** se lee de `GROQ_API_KEY` (el entorno siempre gana) o de `magi/data/groq_key.txt`, que viaja dentro del `.exe` publicado — el binario funciona con subagentes Groq en cualquier PC sin configurar nada.
+
+---
+
 # v5.27.1 — Interfaz táctica Evangelion, desacople de Venim y auditoría ortogonal de YabauseVita
 
 **Qué cambia:** Se aplica la paleta visual canónica de las supercomputadoras MAGI de Evangelion (naranja ámbar `#FF6600`/`#FFA726` y azul turquesa táctico `#00D2C4`/`#005953`), se rotula y desacopla definitivamente la identidad del sistema frente a Venim, y se audita el pipeline de medición ortogonal con Vita3K sobre YabauseVita (775 ventanas de 5 s procesadas, mediana 44.5 FPS).

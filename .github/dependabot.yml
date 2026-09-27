@@ -1,0 +1,30 @@
+# Dependabot: seguridad primero, sin ruido de versiones.
+#
+# Este proyecto pinea sus dependencias a mano y con motivo (curl_cffi>=0.16
+# por Perplexity, requests==2.33.0 por CVE...). Bumps automáticos de versión
+# romperían un binario de 158 MB por un diff cosmético. Lo que SÍ se quiere
+# automático son los avisos y PRs de seguridad: para eso, weekly en los tres
+# ecosistemas, con el límite de PRs bajo para que solo suban los que importan.
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "security"
+  - package-ecosystem: "npm"
+    directory: "/magi-gui"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "security"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "security"

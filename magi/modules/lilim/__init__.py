@@ -25,7 +25,6 @@ from pathlib import Path
 from typing import Any
 
 from .brazos import exportar_a_docx, exportar_a_markdown, recortar_region_imagen
-from .cliente_kobold import ClienteKobold
 from .mielina import (
     clasificar_intencion_local,
     lubricar_arbitraje,
@@ -39,7 +38,7 @@ from .ojos import ResultadoLens, analizar_documento_escaneado, rasterizar_pagina
 
 __all__ = ["pregunta", "repos_de", "NO_LO_SE", "responde_si_sabe",
            "registrar_conocimiento", "repos_clonar", "desregistrar_clon",
-           "enciclopedia", "verificar_novedades_fuente", "ClienteKobold",
+           "enciclopedia", "verificar_novedades_fuente",
            "lubricar_propuesta", "lubricar_critica", "lubricar_arbitraje",
            "lubricar_vision", "clasificar_intencion_local",
            "pre_auditoria_estatica", "analizar_documento_escaneado",

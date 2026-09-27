@@ -1,26 +1,29 @@
 # Magisys
 
+[![CI](https://github.com/zero-phoenix/Magisys/actions/workflows/ci.yml/badge.svg)](https://github.com/zero-phoenix/Magisys/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/zero-phoenix/Magisys)](https://github.com/zero-phoenix/Magisys/releases/latest)
+
 Un entorno de desarrollo con un **enjambre de tres inteligencias que aplican el
 método dialéctico** (tesis → antítesis → síntesis), **herramientas reales sobre
 tu máquina** para ejecutar lo que deciden, y una regla que lo atraviesa todo:
 **una afirmación sin evidencia verificada no es una afirmación**.
 
-Inferencia **100 % de nube gratuita**: sin claves de API, sin modelos locales,
-sin suscripciones.
+Inferencia **100 % de nube**: sin claves obligatorias y **jamás modelos
+locales**. Con tu clave de Groq (`GROQ_API_KEY`, opcional), los **subagentes**
+corren en el motor de menor latencia disponible; sin ella, todo sigue
+funcionando con la nube gratuita.
 
 **[⬇ Descargar la última versión para Windows](https://github.com/zero-phoenix/Magisys/releases/latest)** — un `.zip`, se descomprime y se ejecuta. Sin instalador.
 
 ---
 
-## Qué hay de nuevo en la v5.27.0: enjambre v6, percepción web, degradación D2 y plan vivo
+## Qué hay de nuevo en la v5.28.0: subagentes Groq, cero local y un release que prueba lo que publica
 
-- **Lilim Mielina & Sentidos Tridimensionales:** Inferencia local ultrarrápida (KoboldCpp con Qwen 2.5 1.5B Q4_K_M adaptado a i7-3770 / GTX 1050), acelerador dialéctico («vaina de mielina») para lubricar Melchior, Balthasar, Casper, Naoko y Ritsuko, y tríada sensorial completa: Ojos (inspección de PDFs escaneados e imágenes tipo Google Lens a 150-300 DPI con PyMuPDF), Oídos (validación acústica WAV/MP3/OGG y loopback WASAPI) y Brazos (actuación de workspace con informes Markdown/DOCX y hashing SHA-256).
-- **D2 — Degradación de motor por salud:** cuando los proveedores gratuitos de `deep` fallan o superan el umbral de latencia/errores, el sistema degrada automáticamente a `fast` sin colgar la máquina.
-- **L2 — `repos_clonar`:** clon shallow directamente al workspace con procedencia completa en el WriteJournal de la tarea (cumpliendo la compuerta A3).
-- **F1 — Percepción web sin navegador:** herramientas `web_search` y `web_read` HTTP con presupuesto estricto por ronda y citas con URL + fecha obligatorias.
-- **F2-F5 — Enjambre v6 consolidado:** subagentes por familia de modelo (`F2`), `plan.md` vivo con tarjeta en la interfaz (`F3`), compuerta automática obligatoria antes del cierre (`F4`) y 4to veredicto «la pregunta era otra» (`F5`) con memoria de descartes reutilizables.
-- **C1-GUI — Informe de cancelación visible:** el reporte real de procesos parados y bucles cancelados se pinta directamente en el flujo de conversación.
-- **L3-L4 — Lilim enciclopédico:** verificación automática de novedades tecnológicas 2023-2026 y enciclopedia por dominios.
+- **Groq como motor de SUBAGENTES (la única clave permitida):** un registro propio de subagentes —trabajo de solo lectura, aceleración (mielina), visión rápida y síntesis de contexto— donde Groq (LPU, cientos de tokens/s) manda cuando hay clave y las familias gratuitas de g4f hacen el respaldo cuando no. El enjambre principal (Melchior, Balthasar, Casper, Naoko, Ritsuko) sigue siendo 100 % nube gratuita con diversidad de familias: la clave acelera a los subordinados, no compra el debate.
+- **Jamás modelos locales:** la vía KoboldCpp/Qwen 1.5B de la v5.27.x está eliminada del código y un tripwire (`tests/test_nunca_modelos_locales.py`) impide que un motor local vuelva a colarse. Los subagentes reemplazan además el stub que "verificaba sin hallazgos críticos" sin mirar nada: sin motor, lo dicen.
+- **El release prueba lo que publica:** la suite que aprueba cada versión corre ahora en Windows sobre `requirements.lock` —el entorno exacto con el que se compila el `.exe`— y el binario resultante se **ejecuta** (`Magisys.exe --selftest`) antes de publicarse, incluyendo la prueba real de que el Python embebido corre un subproceso (funciona en cualquier PC sin Python instalado).
+- **Release por Actions, única vía:** el tag debe coincidir con la versión de `pyproject.toml` (gate bloqueante), el zip lleva la versión en el nombre (`Magisys-vX.Y.Z-win64.zip`), las notas son las del tag (no 48 KB acumulados), y hay un canario diario que mide de verdad si la nube gratuita y Groq siguen vivos.
+- **CI blindada contra cuelgues y derroches:** `timeout-minutes` en todos los jobs (un runner colgado consume 360 min del plan Free), `concurrency` que cancela corridas obsoletas de la misma rama y matriz ajustada para el presupuesto de un repo que alterna público/privado.
 
 ## Cómo funciona
 
@@ -57,7 +60,7 @@ observaciones.
    (construye)                           (refuta con evidencia)                       (SÍNTESIS)
         ▲                                          ▲                                      │
         │      ════════════════════════════════════╧═══════════════════════════════════   │
-        └──────║ LILIM (Vaina de Mielina): lubricación local 0-50ms / KoboldCpp Qwen ║◀───┘
+        └──────║ LILIM (Vaina de Mielina): subagentes Groq · la menor latencia ║◀───┘
                ════════════════════════════════════════════════════════════════════════
                                         │
                                         ▼
@@ -149,17 +152,18 @@ audita, tiene su propio chat y su propia pestaña, y habla solo español o ingl�
 
 ---
 
-## Lilim: La vaina de mielina local y los sentidos periféricos
+## Lilim: La vaina de mielina y los sentidos periféricos
 
-Lilim no es un cuarto árbitro dialéctico ni un auditor pasivo: es la **vaina de mielina** del sistema nervioso de MAGI y su enlace sensorial periférico. En biología, la mielina recubre los axones neuronales para permitir una conducción saltatoria ultraveloz de los impulsos. En MAGI, Lilim actúa como un lubricante cognitivo local (latencia de 0 ms en chequeos deterministas a ~45 tok/s en inferencia VLM) que acelera, desahoga y protege a Melchior, Balthasar, Casper, Naoko y Ritsuko.
+Lilim no es un cuarto árbitro dialéctico ni un auditor pasivo: es la **vaina de mielina** del sistema nervioso de MAGI y su enlace sensorial periférico. En biología, la mielina recubre los axones neuronales para permitir una conducción saltatoria ultraveloz de los impulsos. En MAGI, Lilim actúa como lubricante cognitivo (0 ms en chequeos deterministas, centenares de ms en inferencia de subagentes) que acelera, desahoga y protege a Melchior, Balthasar, Casper, Naoko y Ritsuko.
 
-### Arquitectura de Inferencia Neuronal Local: KoboldCpp + Qwen 2.5 1.5B
+### Arquitectura de Inferencia de Subagentes: Groq (LPU) primero, g4f detrás
 
-Para dotar a Lilim de capacidad de razonamiento e inspección visual en local sin comprometer la estabilidad del sistema ni saturar el hardware, la arquitectura se asienta sobre restricciones rigurosamente auditadas:
+Para dotar a Lilim de capacidad de razonamiento e inspección visual **sin modelos locales** (mandato del proyecto desde v5.28.0: jamás), todo el trabajo subordinado corre en el **registro de subagentes**:
 
-- **Motor KoboldCpp (`koboldcpp-oldpc.exe` / `cu11_oldcpu`):** El host opera con un procesador Intel Core i7-3770 (Ivy Bridge, SSE4.2 y AVX1, sin soporte para AVX2 ni FMA3). KoboldCpp es el único runtime contemporáneo que distribuye compilaciones especializadas sin instrucciones AVX2 ilegales, integrando descarga acelerada cuBLAS sobre GPUs NVIDIA Pascal.
-- **VLM / LLM Local (Qwen 2.5 1.5B Instruct en GGUF Q4_K_M):** Con un peso aproximado de ~986 MB en VRAM, el modelo cabe íntegramente en la memoria de una NVIDIA GeForce GTX 1050 de 2 GB (~1.5 GB libres tras composición de escritorio DWM), manteniendo los tensores en GPU y evitando el trasvase punitivo de memoria a la RAM del sistema.
-- **Cliente Asíncrono de Bajo Impacto:** Implementado en la biblioteca estándar de Python (`urllib.request` asíncrono / JSON), sin dependencias pesadas de frameworks externos. Si el endpoint de KoboldCpp (`http://127.0.0.1:5001`) no está activo o se encuentra ocupado, Lilim degrada de manera transparente (fail-safe) a los analizadores heurísticos deterministas de MAGI o a los proveedores en nube.
+- **Motor Groq (`magi/core/providers/backends/groq_backend.py`):** tres familias medidas en la cuenta real (**oss / qwen / flash**) sobre la API OpenAI-compatible de Groq. LPU: latencias de centenares de milisegundos, un orden de magnitud por debajo de cualquier proveedor gratuito. La clave se lee de `GROQ_API_KEY` (entorno) o de `magi/data/groq_key.txt` (viaja dentro del `.exe` publicado), y el catálogo de modelos se sobreescribe con `GROQ_MODELS` sin tocar código.
+- **Respaldo g4f sin clave:** sin clave, el mismo registro cae a las familias gratuitas y el sistema no cambia de comportamiento observable. La clave es una aceleración, no un requisito.
+- **Separación estricta de papeles:** Groq alimenta SOLO subagentes. El enjambre principal sigue en g4f puro con diversidad de familias — el valor epistemológico del debate está en sesgos distintos, no en velocidad. `tests/test_groq_solo_subagente.py` congela esa frontera.
+- **Sin fábricas de verde:** el subagente que no puede mirar lo declara («sin motor»), nunca devuelve «verificado sin hallazgos» inventado — que es lo que hacía el stub de la v5.27.x.
 
 ### La Conducción Saltatoria: Lubricación Dialéctica (Mielina)
 
@@ -178,7 +182,7 @@ Lilim extiende la interacción de MAGI más allá del texto plano mediante tres 
 - **👁️ Ojos (`magi.modules.lilim.ojos` — Google Lens Local):**
   - **Rasterización de Documentos:** Transforma archivos PDF (vectoriales o escaneados) en mapas de bits de alta fidelidad mediante PyMuPDF (`fitz.Matrix`) a resoluciones configurables (150-300 DPI).
   - **Extracción de Layout y Bloques:** Extrae bloques de texto, coordenadas delimitadoras (`bbox`), metadatos de autoría y recuentos de página.
-  - **Inspección Visual Multimodal:** Analiza imágenes escaneadas, diagramas y capturas de pantalla enviándolas al proyector visual de KoboldCpp / Qwen multimodal o puentes de visión, identificando texto ilegible, patrones de diseño y anomalías visuales.
+  - **Inspección Visual Multimodal:** Analiza imágenes escaneadas, diagramas y capturas de pantalla enviándolas a la visión de subagentes (Groq scout con clave, o la primera familia con visión de la nube gratuita), identificando texto ilegible, patrones de diseño y anomalías visuales.
 - **👂 Oídos (`magi.modules.lilim.oidos`):**
   - **Inspección de Contenedores de Audio:** Analiza cabeceras de archivos WAV (PCM no comprimido), MP3 y OGG sin necesidad de decodificadores externos pesados.
   - **Verificación Acústica:** Extrae frecuencia de muestreo (Hz), canales, profundidad de bits y tasa de transferencia.

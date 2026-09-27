@@ -456,7 +456,11 @@ class ProviderRegistry:
         def _sort_key(r: Registration):
             state_val = 0 if r.breaker.state() == "closed" else 1
             latency = r.breaker.p95_ms() or float("inf")
-            prefer_match = 0 if (prefer and r.id == prefer) else 1
+            # `prefer` casa por id O POR FAMILIA. Antes solo por id, y eso
+            # obligaba a quien llamaba a saber el prefijo del backend
+            # ("g4f-gpt", "groq-oss"...): la familia es el contrato estable,
+            # el id es un detalle de implementación que ya cambió una vez.
+            prefer_match = 0 if (prefer and (r.id == prefer or r.family == prefer)) else 1
             return (prefer_match, state_val, latency, r.priority)
         pool.sort(key=_sort_key)
         return pool

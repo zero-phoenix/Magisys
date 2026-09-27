@@ -23,7 +23,6 @@ el contexto de Lilim ya montado.
 """
 from __future__ import annotations
 
-import os
 import struct
 from pathlib import Path
 
@@ -122,89 +121,45 @@ def hechos_de_fichero(ruta: str | Path) -> dict:
 
 # ----------------------------------------------------------------- el puente
 
-#: Cómo se llama al puente flash. La clave vive en el entorno: sin clave,
-#: Lilim cae a las familias gratuitas — y sin red, al NO LO SÉ. Nunca exige.
-_API_BASE = os.environ.get(
-    "LILIM_API_BASE", "https://api.z.ai/api/paas/v4/chat/completions")
-_MODELO_FLASH = os.environ.get("LILIM_MODELO", "glm-5.3-flash")
-
-
-def _clave() -> str | None:
-    return os.environ.get("LILIM_API_KEY") or os.environ.get("ZAI_API_KEY")
+#: El puente flash va SIEMPRE por el registro de SUBAGENTES: Groq (la única
+#: clave permitida, GROQ_API_KEY) primero, y detrás las familias gratuitas
+#: de g4f. Hasta v5.27.1 intentaba primero un KoboldCpp local y luego un
+#: modelo flash con clave Z.AI — dos motores que el mandato de 2026-09-27
+#: retira: jamás modelos locales, y Groq como única excepción de clave.
+_MARCA_SUBAGENTE = "vía subagentes"
 
 
 async def puente(pregunta: str, imagen_b64: str | None = None) -> str:
     """
     La respuesta rápida con inteligencia REAL pero acotada: una llamada al
-    modelo flash o al motor neural local KoboldCpp (Qwen 2.5 1.5B) con
-    temperatura baja y SIN herramientas.
+    registro de subagentes (Groq → g4f) con temperatura baja y SIN
+    herramientas. Sin motor y sin red: NO LO SÉ, dicho explícitamente.
     """
-    # Nivel local neural: KoboldCpp con Qwen 2.5 1.5B (0 ms latencia de red, offline)
-    try:
-        from .cliente_kobold import ClienteKobold
-        cli = ClienteKobold()
-        if await cli.esta_disponible(timeout=0.6):
-            if imagen_b64:
-                resp_vlm = await cli.vision(pregunta, imagen_b64, max_tokens=400)
-                if resp_vlm:
-                    return f"[vía Lilim Neural VLM] {resp_vlm}"
-            else:
-                resp_txt = await cli.generar(pregunta, max_tokens=350)
-                if resp_txt:
-                    return f"[vía Lilim Neural Local] {resp_txt}"
-    except Exception:
-        pass
+    from ...core.providers.base import CompletionRequest, Message
+    from ...core.providers.cloud import get_subagent_registry
 
-    clave = _clave()
-    if not clave:
-        # Sin clave: las familias gratuitas del enjambre en modo flash.
-        try:
-            from magi.core.providers.base import CompletionRequest, Message
-            reg = None
-            mensajes = [Message("system",
-                                "Responde BREVE y factual. Si no lo sabes, "
-                                "di exactamente: NO LO SÉ. No inventes."),
-                        Message("user", pregunta[:2000])]
-            req = CompletionRequest(messages=mensajes, temperature=0.3,
-                                    max_tokens=300)
-            from magi.core.providers.cloud import get_registry
-            reg = await get_registry()
-            resp = await reg.complete(req)
-            texto = (resp.content or "").strip()
-            return (f"[vía nube gratuita] {texto}" if texto
-                    else "NO LO SÉ (puente sin respuesta)")
-        except Exception as e:                     # sin red o todo caído
-            return f"NO LO SÉ (puente no disponible: {e})"
-    # Con clave: el modelo flash multimodal (imagen opcional vía image_url).
-    import json as _json
-    import urllib.request
-    contenido: list | str = pregunta
-    if imagen_b64:
-        contenido = [
-            {"type": "text", "text": pregunta},
-            {"type": "image_url",
-             "image_url": {"url": f"data:image/png;base64,{imagen_b64}"}},
-        ]
-    cuerpo = _json.dumps({
-        "model": _MODELO_FLASH,
-        "messages": [{"role": "user",
-                      "content": contenido}],
-        "temperature": 0.3, "max_tokens": 500,
-    }).encode("utf-8")
-    peticion = urllib.request.Request(
-        _API_BASE, data=cuerpo, method="POST",
-        headers={"Authorization": f"Bearer {clave}",
-                 "Content-Type": "application/json"})
-    import asyncio
     try:
-        def _llamar():
-            with urllib.request.urlopen(peticion, timeout=30) as r:
-                return _json.loads(r.read())
-        respuesta = await asyncio.get_running_loop().run_in_executor(
-            None, _llamar)
-        texto = (respuesta.get("choices") or [{}])[0].get(
-            "message", {}).get("content", "").strip()
-        return f"[vía {_MODELO_FLASH}] {texto}" if texto else \
-            "NO LO SÉ (puente sin contenido)"
-    except Exception as e:
-        return f"NO LO SÉ (puente falló: {e})"
+        reg = await get_subagent_registry()
+        if imagen_b64:
+            from ...core.providers.cloud import FreeCloudLLM
+            url = f"data:image/png;base64,{imagen_b64}"
+            texto, motor = await FreeCloudLLM(registry=reg).generate_vision(
+                "Responde BREVE y factual. Si no lo sabes, di exactamente: "
+                "NO LO SÉ. No inventes.", pregunta[:2000], url)
+            if motor.startswith("SYSTEM"):
+                return "NO LO SÉ (puente sin visión disponible)"
+            return f"[{_MARCA_SUBAGENTE} · {motor}] {texto}"
+
+        resp = await reg.complete(CompletionRequest(
+            messages=[Message("system",
+                              "Responde BREVE y factual. Si no lo sabes, "
+                              "di exactamente: NO LO SÉ. No inventes."),
+                      Message("user", pregunta[:2000])],
+            temperature=0.3, max_tokens=300, timeout_s=45.0,
+            presupuesto_s=45.0, hedge=False, tag="puente-flash"))
+        texto = (resp.content or "").strip()
+        if not texto:
+            return "NO LO SÉ (puente sin respuesta)"
+        return f"[{_MARCA_SUBAGENTE} · {resp.provider_id}] {texto}"
+    except Exception as e:                     # sin red o todo caído
+        return f"NO LO SÉ (puente no disponible: {e})"

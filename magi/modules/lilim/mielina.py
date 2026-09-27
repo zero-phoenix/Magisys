@@ -1,18 +1,26 @@
 """
-VAINA DE MIELINA — Acelerador neuro-computacional de MAGI (megaplan v13).
+VAINA DE MIELINA — Acelerador de nube de MAGI (megaplan v13; v5.28.0 sin local).
 
 METÁFORA BIOLÓGICA Y FUNCIÓN
 ============================
 En el sistema nervioso, la mielina envuelve los axones para permitir la
 conducción saltatoria (transmisión hasta 100 veces más veloz).
 
-En MAGI, Lilim actúa como la vaina de mielina: una capa local ultrarrápida
-(Qwen 2.5 1.5B Instruct en KoboldCpp + memoria EPD) que envuelve a:
-  - MELCHIOR:  Especulación y andamiaje preliminar (<250 ms) antes de la nube.
-  - BALTHASAR: Pre-auditoría local y chequeo estático de defectos obvios.
-  - CASPER:    Destilación y compresión de contexto de debates extensos.
-  - NAOKO:     Visión multimodal local para inspección de capturas web/DOM.
-  - RITSUKO:   Enrutamiento semántico instantáneo y caché sin latencia.
+En MAGI, esta capa envuelve al enjambre con inferencia de BAJA LATENCIA.
+Hasta la v5.27.1 esa velocidad venía de KoboldCpp corriendo un Qwen 1.5B en
+la GPU local del usuario. Eso era un MODELO LOCAL, y el mandato de 2026-09-27
+es taxativo: jamás modelos locales — la única excepción con clave es Groq.
+La mielina ahora viaja por nube: Groq (LPU, cientos de ms) si hay
+GROQ_API_KEY, y si no, la familia gratuita más sana de g4f. El contrato no
+cambia: cada lubricar_* devuelve None o su parte determinista cuando no hay
+motor, y el enjambre sigue igual.
+
+QUÉ SE CONSERVA EXACTAMENTE
+===========================
+La pre-auditoría estática (`ast` de Python, 0 ms, sin red) y la clasificación
+de intenciones (0 ms) eran —y siguen siendo— deterministas: no son modelos y
+nunca lo fueron. El tripwire tests/test_nunca_modelos_locales.py vigila que
+ningún motor local vuelva a colarse.
 """
 from __future__ import annotations
 
@@ -22,20 +30,41 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .cliente_kobold import ClienteKobold
 from .rapida import hechos_de_imagen
 
 logger = logging.getLogger(__name__)
 
-_cliente_singleton: ClienteKobold | None = None
 
+async def _inferencia(
+    prompt: str, *, max_tokens: int, temperature: float,
+    timeout_s: float = 12.0, system: str = "Eres un asistente técnico conciso.",
+) -> str | None:
+    """
+    Una llamada corta al registro de proveedores: Groq primero (si hay clave),
+    g4f detrás. Techo de reloj CORTO a propósito — esto es un acelerador: si
+    la respuesta tarda más que el turno que pretende lubricar, no acelera.
 
-def obtener_cliente() -> ClienteKobold:
-    """Devuelve el cliente singleton de KoboldCpp."""
-    global _cliente_singleton
-    if _cliente_singleton is None:
-        _cliente_singleton = ClienteKobold()
-    return _cliente_singleton
+    Devuelve None ante cualquier fallo. Un acelerador que lanza excepciones
+    no es un acelerador, es un punto único de fallo nuevo.
+    """
+    from ...core.providers.base import CompletionRequest, Message, ProviderError
+    from ...core.providers.cloud import get_subagent_registry
+
+    try:
+        reg = await get_subagent_registry()
+        resp = await reg.complete(
+            CompletionRequest(
+                messages=[Message("system", system), Message("user", prompt)],
+                timeout_s=timeout_s, presupuesto_s=timeout_s,
+                temperature=temperature, max_tokens=max_tokens,
+                hedge=False, tag="mielina",
+            ),
+        )
+    except (ProviderError, Exception) as e:  # noqa: BLE001 — se REPORTA y degrada
+        logger.debug("[mielina] sin motor rápido ahora: %s", e)
+        return None
+    contenido = (resp.content or "").strip()
+    return contenido or None
 
 
 async def lubricar_propuesta(encargo: str, contexto: str = "") -> str | None:
@@ -45,10 +74,6 @@ async def lubricar_propuesta(encargo: str, contexto: str = "") -> str | None:
     Permite que Melchior reciba una estructura sólida de partida, reduciendo
     el consumo de tokens y el tiempo de respuesta del proveedor de nube.
     """
-    cliente = obtener_cliente()
-    if not await cliente.esta_disponible(timeout=0.8):
-        return None
-
     prompt = (
         f"Actúa como un arquitecto de software de alto rendimiento.\n"
         f"Encargo: {encargo}\n"
@@ -57,7 +82,7 @@ async def lubricar_propuesta(encargo: str, contexto: str = "") -> str | None:
         f"(Python o C según aplique), con firmas de funciones, contratos y "
         f"estructuras de datos bien definidas. Sé conciso."
     )
-    return await cliente.generar(prompt, max_tokens=380, temperature=0.15, timeout=12.0)
+    return await _inferencia(prompt, max_tokens=380, temperature=0.15)
 
 
 #: Bloques cercados de Markdown: ```lenguaje ... ```
@@ -190,26 +215,24 @@ async def lubricar_critica(
 ) -> list[str]:
     """
     Pre-auditoría rápida para Balthasar.
-    Combina escaneo estático local con evaluación neural si KoboldCpp está activo.
+    Escaneo estático determinista + objeciones del motor rápido de nube.
     """
     defectos = pre_auditoria_estatica(propuesta)
 
-    cliente = obtener_cliente()
-    if await cliente.esta_disponible(timeout=0.8):
-        ejes_txt = ", ".join(ejes) if ejes else "seguridad, rendimiento, coherencia"
-        prompt = (
-            f"Como crítico técnico implacable, evalúa la siguiente propuesta bajo "
-            f"los ejes: {ejes_txt}.\n"
-            f"Propuesta:\n{propuesta[:1200]}\n\n"
-            f"Lista hasta 3 objeciones o defectos técnicos severos en viñetas cortas. "
-            f"Si el código es óptimo, responde exactamente: SIN OBJECIONES."
-        )
-        res = await cliente.generar(prompt, max_tokens=200, temperature=0.1, timeout=10.0)
-        if res and "SIN OBJECIONES" not in res.upper():
-            for linea in res.splitlines():
-                ln = linea.strip("- *").strip()
-                if ln and len(ln) > 10:
-                    defectos.append(ln)
+    ejes_txt = ", ".join(ejes) if ejes else "seguridad, rendimiento, coherencia"
+    prompt = (
+        f"Como crítico técnico implacable, evalúa la siguiente propuesta bajo "
+        f"los ejes: {ejes_txt}.\n"
+        f"Propuesta:\n{propuesta[:1200]}\n\n"
+        f"Lista hasta 3 objeciones o defectos técnicos severos en viñetas cortas. "
+        f"Si el código es óptimo, responde exactamente: SIN OBJECIONES."
+    )
+    res = await _inferencia(prompt, max_tokens=200, temperature=0.1)
+    if res and "SIN OBJECIONES" not in res.upper():
+        for linea in res.splitlines():
+            ln = linea.strip("- *").strip()
+            if ln and len(ln) > 10:
+                defectos.append(ln)
 
     return defectos[:5]
 
@@ -221,10 +244,6 @@ async def lubricar_arbitraje(
     Destila y comprime el debate para Casper.
     Reduce un contexto extenso a una síntesis ejecutiva de alta densidad.
     """
-    cliente = obtener_cliente()
-    if not await cliente.esta_disponible(timeout=0.8):
-        return None
-
     obs_txt = "\n".join(f"- {o}" for o in objeciones) if objeciones else "Ninguna objeción mayor."
     prompt = (
         f"Encargo original: {encargo[:300]}\n"
@@ -235,28 +254,48 @@ async def lubricar_arbitraje(
         f"2. Si las objeciones son bloqueantes o subsanables. "
         f"3. Veredicto recomendado (APROBAR / RECHAZAR / AJUSTAR)."
     )
-    return await cliente.generar(prompt, max_tokens=220, temperature=0.1, timeout=10.0)
+    return await _inferencia(prompt, max_tokens=220, temperature=0.1)
 
 
 async def lubricar_vision(
     imagen: bytes | str | Path, instruccion: str = "Describe los elementos interactivos"
 ) -> dict[str, Any]:
     """
-    Análisis multimodal local para Naoko (navegación y percepción visual).
-    Extrae hechos deterministas y añade descripción VLM si KoboldCpp está activo.
+    Análisis multimodal para Naoko (navegación y percepción visual).
+    Hechos deterministas del fichero + descripción del proveedor de visión de
+    nube (Groq scout con clave; el primero sano de lo contrario).
     """
+    import base64
+    import mimetypes
+
     info: dict[str, Any] = {}
+    datos: bytes
+    mime = "image/png"
     if isinstance(imagen, (str, Path)):
         info = hechos_de_imagen(imagen)
+        ruta = Path(imagen)
+        try:
+            datos = ruta.read_bytes()
+            mime = mimetypes.guess_type(str(ruta))[0] or mime
+        except OSError:
+            datos = b""
     else:
+        datos = imagen
         info = {"formato": "bytes", "tamano": len(imagen)}
 
-    cliente = obtener_cliente()
-    if await cliente.esta_disponible(timeout=0.8):
-        desc = await cliente.vision(instruccion, imagen, max_tokens=300, timeout=15.0)
-        if desc:
-            info["analisis_vlm"] = desc
-            info["motor_vision"] = "qwen-vlm-local"
+    if not datos:
+        return info
+
+    from ...core.providers.cloud import FreeCloudLLM, get_subagent_registry
+    url_datos = f"data:{mime};base64,{base64.b64encode(datos).decode('ascii')}"
+    # Visión por el registro de SUBAGENTES (Groq scout con clave; g4f si no):
+    # la visión de mielina es trabajo subordinado, no debate del enjambre.
+    desc, motor = await FreeCloudLLM(
+        registry=await get_subagent_registry()).generate_vision(
+        "Analiza la imagen con precisión técnica.", instruccion, url_datos)
+    if motor and not motor.startswith("SYSTEM"):
+        info["analisis_vlm"] = desc
+        info["motor_vision"] = motor
     return info
 
 

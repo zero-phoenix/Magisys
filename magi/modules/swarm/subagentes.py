@@ -1,13 +1,20 @@
 """
-Subagentes especializados por familia (Megaplan F2).
+Subagentes especializados de solo lectura (Megaplan F2; motor Groq desde v5.28.0).
 
 Invariantes de F2:
-1. Misma familia que su nodo (Melchior/gpt -> subagente gpt; Balthasar/gemini -> subagente gemini).
+1. Motor SUBORDINADO: desde el mandato de 2026-09-27, los subagentes corren
+   en el registro de SUBAGENTES — Groq (la única clave permitida) primero y
+   g4f de respaldo. NUNCA usan las familias del debate principal, y el
+   enjambre NUNCA usa Groq: papeles separados, diversidad intacta.
 2. Solo lectura: nunca escribe ni muta el sistema.
 3. Devuelve conclusión sintetizada, no volcado íntegro de ficheros (ahorro neto de contexto).
 4. Turno único y temperatura baja.
 5. Tope duro por nodo y ronda (máximo 2 subagentes para evitar agotar cuotas).
 6. Traza visible: publica eventos de trazabilidad.
+7. SIN FÁBRICA DE VERDES: la versión anterior devolvía «verificado sin
+   hallazgos críticos» SIN COMPROBAR NADA cuando no había motor. Un
+   subagente que no pudo mirar lo dice — una conclusión inventada con forma
+   de veredicto es el fallo más caro que este sistema puede producir.
 """
 from __future__ import annotations
 
@@ -69,6 +76,40 @@ class GestorSubagentes:
 _GESTOR_GLOBAL = GestorSubagentes()
 
 
+async def _ejecutar_con_subagentes(mision: str) -> tuple[str, str | None]:
+    """
+    Corre la misión en el registro de SUBAGENTES (Groq primero, g4f detrás).
+
+    Devuelve (conclusión, familia_real_que_respondió). Conclusión vacía =
+    no había motor: el llamador lo declara como fallo honesto, NUNCA como
+    «verificado sin hallazgos» — que es lo que hacía la versión stub.
+    """
+    from ...core.providers.base import CompletionRequest, Message, ProviderError
+    from ...core.providers.cloud import get_subagent_registry
+
+    sistema = (
+        "Eres un subagente de solo lectura de MAGI. Analizas, contrastas y "
+        "devuelves UNA conclusión sintética de pocas líneas con evidencia "
+        "directa (fichero, línea o dato) por afirmación. Si no puedes "
+        "verificar algo, lo dices: 'SIN COMPROBAR'. Nunca inventas hallazgos."
+    )
+    try:
+        reg = await get_subagent_registry()
+        resp = await reg.complete(CompletionRequest(
+            messages=[Message("system", sistema), Message("user", mision)],
+            timeout_s=90.0, presupuesto_s=90.0,
+            temperature=0.2, max_tokens=500, hedge=False,
+            tag="subagente",
+        ))
+    except (ProviderError, Exception) as e:  # noqa: BLE001 — se declara, no se disimula
+        logger.warning("[subagente] sin motor: %s", e)
+        return "", None
+    contenido = (resp.content or "").strip()
+    if not contenido or contenido.startswith("[Inferencia no disponible"):
+        return "", None
+    return contenido, resp.family
+
+
 async def despachar_subagente(
     *,
     nodo: str,
@@ -102,8 +143,8 @@ async def despachar_subagente(
     if ejecutor is not None:
         conclusion = await ejecutor(nodo=nodo, familia=familia, mision=mision)
     else:
-        # Modo determinista / fallback
-        conclusion = f"Análisis de {mision}: verificado sin hallazgos críticos."
+        conclusion, familia_real = await _ejecutar_con_subagentes(mision)
+        familia = familia_real or familia
 
     tokens_estimados = max(1, len(conclusion.split()))
     resultado = SubagenteResultado(
@@ -112,7 +153,11 @@ async def despachar_subagente(
         mision=mision,
         conclusion=conclusion,
         tokens_estimados=tokens_estimados,
+        exito=bool(conclusion),
+        error="" if conclusion else "sin motor de subagentes disponible",
     )
+    if not conclusion:
+        return resultado
 
     if bus is not None and hasattr(bus, "publish"):
         try:
