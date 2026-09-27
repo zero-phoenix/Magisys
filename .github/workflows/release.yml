@@ -62,7 +62,7 @@ jobs:
         fi
         echo "VERSION=$v" >> "$GITHUB_ENV"
 
-    - uses: actions/setup-python@v5
+    - uses: actions/setup-python@v7
       with:
         python-version: '3.11'
         cache: 'pip'
@@ -118,7 +118,7 @@ jobs:
         "VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
       with:
         python-version: '3.10'
         cache: 'pip'
