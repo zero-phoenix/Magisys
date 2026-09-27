@@ -21,6 +21,7 @@ _install_browser_guard()
 # ('charmap' codec can't encode characters...)"—, forzando pedir la respuesta
 # entera otra vez. Este proyecto habla español: no era un caso raro.
 from magi.core.consola import configurar as _configurar_consola
+from magi.core import paths as _paths
 
 _configurar_consola()
 
@@ -269,8 +270,7 @@ def main():
             # Build windowed: PyInstaller descarta stdout, así que el informe
             # viaja a un fichero junto al exe — lo que lee el release antes
             # de publicar para dejar SELFTEST OK en su log.
-            salida = open(os.path.join(os.path.dirname(sys.executable),
-                                       "selftest_report.txt"), "w",
+            salida = open(_paths.exe_dir() / "selftest_report.txt", "w",
                           encoding="utf-8")
             sys.stdout = sys.stderr = salida
         try:

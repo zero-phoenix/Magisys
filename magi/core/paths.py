@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "project_root", "data_dir", "workspace_dir", "journal_dir",
     "db_path", "logs_dir", "cache_dir", "is_frozen", "describe",
-    "python_executable", "pytest_argv", "escritorio",
+    "python_executable", "pytest_argv", "escritorio", "exe_dir",
 ]
 
 _ENV_ROOT = "MAGI_ROOT"
@@ -33,6 +33,14 @@ _ENV_WORKSPACE = "MAGI_WORKSPACE"
 def is_frozen() -> bool:
     """True si corremos dentro de un bundle de PyInstaller."""
     return getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS")
+
+
+def exe_dir() -> Path:
+    """Directorio del binario en marcha. Congelado, es el que contiene el
+    .exe (sys.executable es el propio binario: por eso esto se resuelve
+    aquí y no se toca sys.executable fuera de paths.py). En desarrollo,
+    el del intérprete — nadie depende de él en ese caso."""
+    return Path(sys.executable).resolve().parent
 
 
 @lru_cache(maxsize=1)
