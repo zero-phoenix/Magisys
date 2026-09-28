@@ -79,7 +79,7 @@ TECHOS: dict[str, int] = {
     # justo antes de gastar.
     # +26 en la v5.29 (megaplan autonomía): sys.config expone y fija el nivel
     # de autonomía por RPC y arranca la segadora de zombis periódica.
-    "magi/core/kernel.py": 1100,
+    "magi/core/kernel.py": 1099,
     # +48 en la v5.5.2: el filtro de idioma que se le inyecta a Yqcloud por
     # API (responde en chino cuando le apetece) y el catálogo de la familia
     # `gpt` con WeWordle de vuelta, cada entrada con el motivo escrito.

@@ -114,8 +114,7 @@ class Kernel:
         cosa que este proyecto ha estado desmontando.
         """
         from magi import __version__
-        from magi.core import no_browser, paths
-        from magi.core import autonomia
+        from magi.core import autonomia, no_browser, paths
 
         # v5.29: el nivel de autonomía se cambia AQUÍ, por RPC — es la vía
         # que usa la GUI y la prueba estelar headless. Un valor inválido no

@@ -36,7 +36,7 @@ ALERT_COOLDOWN_S = 300.0
 # que `obs.metrics.providers` dejara de estar vacío: `record_provider` existía
 # y nadie lo llamaba.
 
-_colector: "MetricsCollector | None" = None
+_colector: MetricsCollector | None = None
 
 
 def emit_provider_metric(provider: str, latency_ms: float, ok: bool,

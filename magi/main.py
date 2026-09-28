@@ -20,8 +20,8 @@ _install_browser_guard()
 # el bucle de streaming y lo abortaba a mitad de respuesta —"streaming falló
 # ('charmap' codec can't encode characters...)"—, forzando pedir la respuesta
 # entera otra vez. Este proyecto habla español: no era un caso raro.
-from magi.core.consola import configurar as _configurar_consola
 from magi.core import paths as _paths
+from magi.core.consola import configurar as _configurar_consola
 
 _configurar_consola()
 

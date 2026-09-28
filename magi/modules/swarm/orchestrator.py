@@ -12,12 +12,13 @@ from magi.core.verification import ProposalVerifier
 from magi.modules.memory.episodic import EpisodicMemory
 
 from . import filosofias
+from .agents import BalthasarAgent, CasperAgent, MelchiorAgent
+
 # Entregables de los bloques (v5.29 Fase 4): qué se ejecuta y qué solo se
 # guarda, con qué extensión y con auto-chequeo. Módulo propio porque la
 # lógica no es del enjambre: es del formato de lo que entrega.
 from .artifactos import guardar_bloque  # noqa: F401 (re-export)
 from .artifactos import parece_html as _parece_html  # noqa: F401 (re-export)
-from .agents import BalthasarAgent, CasperAgent, MelchiorAgent
 from .intencion import aprueba as _aprueba
 from .intencion import es_respuesta_a_aprobacion
 from .parallel import (
@@ -1499,15 +1500,12 @@ class SwarmOrchestrator:
                     verdict.get("decision", ""), verdict.get("feedback", ""),
                     plan=state.get("plan"))
 
-                # AUTONOMÍA (v5.29 Fase 3): la política de riesgo decide si
-                # esta ronda necesita humano. Si no lo necesita, se reusa el
-                # camino de aprobación ya probado — un _despachar con "SI"
-                # sobre la tarea en espera hace EXACTAMENTE lo que haría el
-                # botón Apruebo, con su ejecución de bloques y su auditoría.
-                # Medido en la auditoría del Tetris: esperar al humano costaba
-                # 20 minutos de bloqueo por una aprobación que nadie debía ver.
+                # AUTONOMÍA (v5.29 Fase 3): riesgo bajo reutiliza _despachar
+                # con "SI", el mismo camino que el botón Apruebo, con bloques
+                # ejecutados y auditados, sin 20 minutos de espera humana.
                 state["esperando_desde"] = time.time()
                 from magi.core import autonomia as _autonomia
+
                 from .politica_riesgo import requiere_humano
                 if not requiere_humano(state, _autonomia.nivel()):
                     await self.bus.publish(BusEvent(
