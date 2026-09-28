@@ -12,6 +12,11 @@ from magi.core.verification import ProposalVerifier
 from magi.modules.memory.episodic import EpisodicMemory
 
 from . import filosofias
+# Entregables de los bloques (v5.29 Fase 4): qué se ejecuta y qué solo se
+# guarda, con qué extensión y con auto-chequeo. Módulo propio porque la
+# lógica no es del enjambre: es del formato de lo que entrega.
+from .artifactos import guardar_bloque  # noqa: F401 (re-export)
+from .artifactos import parece_html as _parece_html  # noqa: F401 (re-export)
 from .agents import BalthasarAgent, CasperAgent, MelchiorAgent
 from .intencion import aprueba as _aprueba
 from .intencion import es_respuesta_a_aprobacion
@@ -493,6 +498,38 @@ class SwarmOrchestrator:
             logger.warning(
                 "[SWARM] no se pudo reunir el contexto de aprobación: %s", e)
 
+    async def segar_zombis(self, max_espera_s: float = 1800.0) -> list[str]:
+        """
+        SEGADORA DE ZOMBIS (v5.29 Fase 3): una ronda en
+        WAITING_USER_APPROVAL más de `max_espera_s` (30 min) sin humano se
+        avisa UNA vez al bus. No muta estado a propósito — la reanudación
+        correcta es del flujo de aprobación, y falsificar un visto bueno
+        sería peor que el zombi. Lo que sí elimina el zombi de verdad es la
+        política de riesgo: con `autonomia=total` la mayoría ni se genera.
+        """
+        segadas: list[str] = []
+        now = time.time()
+        for tid, state in list(self.active_tasks.items()):
+            if state.get("status") != "WAITING_USER_APPROVAL":
+                continue
+            desde = state.get("esperando_desde", 0)
+            if not desde or now - desde < max_espera_s:
+                continue
+            if state.get("zombi_avisado"):
+                continue
+            state["zombi_avisado"] = True
+            segadas.append(tid)
+            await self.bus.publish(BusEvent(
+                topic="TERMINAL_OUT",
+                payload={"content":
+                         f"[AUTONOMÍA] {tid} lleva "
+                         f"{int((now - desde) / 60)} min esperando tu "
+                         f"aprobación. Responde 'sí'/'no' en esa "
+                         f"conversación, o archívala desde la lista."}))
+            logger.warning("[SWARM] %s es zombi: %d s en WAITING_USER_APPROVAL",
+                           tid, int(now - desde))
+        return segadas
+
     def _persist(self, task_id: str) -> None:
         """Vuelca el estado en curso. Llamar tras cada transición."""
         state = self.active_tasks.get(task_id)
@@ -757,16 +794,26 @@ class SwarmOrchestrator:
                                     payload={"content": f"[AUTO-EXEC] Ejecutando bloque {i+1} ({lang or 'shell'})..."}
                                 ))
 
-                                if lang in ["python", "py"]:
+                                # (v5.29 Fase 4) Los scripts se ejecutan; los
+                                # artefactos se guardan con su extensión y NO
+                                # se tocan. Ver _EXT_ARTEFACTO arriba.
+                                if lang in ("python", "py"):
                                     temp_file = scratch_dir / f"auto_script_{i}.py"
                                     journal.record(temp_file, "create", tool="auto_exec")
                                     temp_file.write_text(code, encoding="utf-8")
                                     cmd = f"python {temp_file.name}"
-                                else:
+                                elif lang in ("shell", "sh", "bash", "powershell", "ps1", "pwsh", ""):
                                     temp_file = scratch_dir / f"auto_script_{i}.ps1"
                                     journal.record(temp_file, "create", tool="auto_exec")
                                     temp_file.write_text(code, encoding="utf-8")
                                     cmd = f"powershell -ExecutionPolicy Bypass -File {temp_file.name}"
+                                else:
+                                    _ruta, aviso = guardar_bloque(
+                                        scratch_dir, i, lang, code, journal)
+                                    await self.bus.publish(BusEvent(
+                                        topic="TERMINAL_OUT",
+                                        payload={"content": aviso}))
+                                    continue
 
                                 process = await asyncio.create_subprocess_shell(
                                     cmd,
@@ -774,12 +821,8 @@ class SwarmOrchestrator:
                                     stdout=asyncio.subprocess.PIPE,
                                     stderr=asyncio.subprocess.PIPE
                                 )
-                                # §7.3 — este es EL proceso que más urge poder
-                                # parar: un script generado por un LLM
-                                # ejecutándose en la máquina del usuario, en
-                                # PowerShell con la política saltada. Sin
-                                # inscribirlo, la parada de emergencia lo
-                                # ignoraba por completo.
+                                # §7.3 — EL proceso más urgente de parar: un
+                                # script de un LLM en la máquina del usuario.
                                 from magi.core.cancel import supervisor
                                 supervisor().register_process(task_id, process)
                                 try:
@@ -1455,6 +1498,35 @@ class SwarmOrchestrator:
                 _cierre.evaluar_cierre_entrega(
                     verdict.get("decision", ""), verdict.get("feedback", ""),
                     plan=state.get("plan"))
+
+                # AUTONOMÍA (v5.29 Fase 3): la política de riesgo decide si
+                # esta ronda necesita humano. Si no lo necesita, se reusa el
+                # camino de aprobación ya probado — un _despachar con "SI"
+                # sobre la tarea en espera hace EXACTAMENTE lo que haría el
+                # botón Apruebo, con su ejecución de bloques y su auditoría.
+                # Medido en la auditoría del Tetris: esperar al humano costaba
+                # 20 minutos de bloqueo por una aprobación que nadie debía ver.
+                state["esperando_desde"] = time.time()
+                from magi.core import autonomia as _autonomia
+                from .politica_riesgo import requiere_humano
+                if not requiere_humano(state, _autonomia.nivel()):
+                    await self.bus.publish(BusEvent(
+                        topic="swarm.autoapproved",
+                        payload={"task_id": task_id,
+                                 "nivel": _autonomia.nivel(),
+                                 "resumen": (verdict.get("feedback") or "")[:200]}))
+                    await self.bus.publish(BusEvent(
+                        topic="TERMINAL_OUT",
+                        payload={"content":
+                                 f"[AUTONOMÍA] Riesgo bajo (nivel "
+                                 f"{_autonomia.nivel()}): {task_id} continúa "
+                                 f"sola, sin aprobación humana."}))
+                    self._persist(task_id)
+                    await self._despachar(task_id, "SI", engine,
+                                          narrative_style, route, max_rounds,
+                                          use_tools)
+                    break
+
                 await self._publish_approval(task_id, state, verdict)
 
                 await self.bus.publish(BusEvent(

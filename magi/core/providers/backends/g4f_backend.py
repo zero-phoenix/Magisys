@@ -39,6 +39,7 @@ from collections.abc import AsyncIterator, Iterable
 from typing import Any
 
 from ...no_browser import install as install_browser_guard
+from ...obs.metrics import emit_provider_metric
 from ..base import (
     BaseProvider,
     CompletionRequest,
@@ -49,6 +50,7 @@ from ..base import (
     Usage,
 )
 from ..cache import TTLCache
+from ..circuit import CalidadBreaker
 
 logger = logging.getLogger(__name__)
 
@@ -562,6 +564,9 @@ class G4FProvider(BaseProvider):
         #: respuesta y ordena los intentos: el catálogo dice quién PUEDE
         #: contestar, esto dice quién contesta RÁPIDO hoy.
         self._latencia: dict[Candidate, float] = {}
+        #: Breaker de CALIDAD por candidato upstream (v5.29 Fase 2): el que
+        #: contesta basura dos veces seguidas deja de recibir tráfico.
+        self._calidad = CalidadBreaker()
 
     # ------------------------------------------------------------------ setup
 
@@ -625,7 +630,12 @@ class G4FProvider(BaseProvider):
         # descartarlo dejaba la familia gemini ENTERA sin candidatos. Los que
         # de verdad solo saben abrir Chrome (Cloudflare, DeepInfra) están en
         # ROTOS, que es donde les corresponde.
-        vivos = [c for c in self.candidates if c[0] not in ROTOS]
+        #
+        # (v5.29 Fase 2) Tampoco entran los ABIERTOS por calidad: dos basuras
+        # seguidas y el candidato espera su ventana de semapertura. El estado
+        # del breaker es consultable en snapshot()/sys.config.
+        vivos = [c for c in self.candidates
+                 if c[0] not in ROTOS and self._calidad.permite(c[0])]
         limpios = sorted((c for c in vivos if not puede_abrir_navegador(c)),
                          key=coste)
         degradados = sorted((c for c in vivos if puede_abrir_navegador(c)),
@@ -808,6 +818,18 @@ class G4FProvider(BaseProvider):
                         errors.append(f"{cand[0]}: {type(e).__name__}: {e}")
                         logger.debug("[%s] candidato %s falló: %s",
                                      self.id, cand[0], e)
+                        # (v5.29 Fase 1+2) el fallo se mide y cuenta: si este
+                        # candidato lleva dos seguidos, el breaker lo saca.
+                        estado = self._calidad.fallo(cand[0])
+                        if estado == "ABIERTO":
+                            logger.warning(
+                                "[%s] %s ABIERTO por calidad: %d fallos "
+                                "seguidos; fuera de rotación %ds",
+                                self.id, cand[0],
+                                self._calidad.umbral,
+                                int(self._calidad.ventana_s))
+                        emit_provider_metric(cand[0], 0.0, False,
+                                             family=self.id)
                         continue
 
                     # ¿ES UNA RESPUESTA O SOLO PARECE UNA?
@@ -839,8 +861,25 @@ class G4FProvider(BaseProvider):
                         logger.warning("[%s] %s devolvió una respuesta "
                                        "inservible (%s); probando otro",
                                        self.id, cand[0], inservible)
+                        # (v5.29 Fase 1+2) la basura se mide como fallo: era
+                        # EL bug del router a ciegas — Perplexity devolvía
+                        # 'tud.' y seguíamos rotándolo como si nada.
+                        estado = self._calidad.fallo(cand[0])
+                        if estado == "ABIERTO":
+                            logger.warning(
+                                "[%s] %s ABIERTO por calidad (%s); fuera de "
+                                "rotación %ds", self.id, cand[0], inservible,
+                                int(self._calidad.ventana_s))
+                        emit_provider_metric(cand[0], 0.0, False,
+                                             family=self.id)
                         continue
 
+                    self._calidad.exito(ganador)
+                    emit_provider_metric(
+                        ganador[0],
+                        self._latencia.get(ganador,
+                                           (time.monotonic() - started) * 1000),
+                        True, family=self.id)
                     self._live = ganador
                     usage = Usage(
                         prompt_tokens=sum(self.estimate_tokens(str(m["content"]))

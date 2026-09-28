@@ -115,6 +115,15 @@ class Kernel:
         """
         from magi import __version__
         from magi.core import no_browser, paths
+        from magi.core import autonomia
+
+        # v5.29: el nivel de autonomía se cambia AQUÍ, por RPC — es la vía
+        # que usa la GUI y la prueba estelar headless. Un valor inválido no
+        # tumba la consulta: se ignora y el nivel sigue siendo el anterior.
+        if isinstance(payload, dict) and payload.get("autonomia"):
+            if not autonomia.fijar(str(payload["autonomia"])):
+                logger.warning("[kernel] autonomia inválida: %r",
+                               payload.get("autonomia"))
         from magi.core.providers.backends.g4f_backend import (
             FAMILY_SPECS,
             HEDGE_AFTER_S,
@@ -152,6 +161,10 @@ class Kernel:
                 "descartados": (r.provider.motivos_descartados()  # type: ignore[attr-defined]
                                 if hasattr(r.provider, "motivos_descartados")
                                 else {}),
+                # Breaker de CALIDAD por candidato (v5.29 Fase 2): quién está
+                # ABIERTO por responder basura. El router a ciegas era esto.
+                "calidad": (r.provider._calidad.snapshot()  # type: ignore[attr-defined]
+                            if hasattr(r.provider, "_calidad") else {}),
             })
 
         # `task_hint=""` a propósito, y explícito para que se vea que es una
@@ -165,6 +178,9 @@ class Kernel:
 
         return {
             "version": __version__,
+            # Nivel de autonomía vigente (v5.29). Consultable y cambiable
+            # por RPC: sys.config con {"autonomia": "manual|supervisada|total"}.
+            "autonomia": autonomia.nivel(),
             "enjambre": {"reparto": asignacion.by_role,
                          "familias": asignacion.families,
                          "diversidad": asignacion.diversity,
@@ -852,6 +868,17 @@ class Kernel:
 
         # La sonda, en segundo plano y con freno propio. Ver `_refrescar_sonda`.
         self._tarea_sonda = asyncio.create_task(self._refrescar_sonda())
+
+        # SEGADORA DE ZOMBIS (v5.29 Fase 3): cada 5 min escanea rondas
+        # esperando aprobación; las de >30 min se anuncian al bus una vez.
+        async def _segar_periodico():
+            while True:
+                await asyncio.sleep(300)
+                try:
+                    await self.swarm.segar_zombis()
+                except Exception as e:  # noqa: BLE001 — el reaper no tumba nada
+                    logger.debug("[kernel] segadora de zombis falló: %s", e)
+        self._tarea_segar = asyncio.create_task(_segar_periodico())
 
         logger.info("Kernel listo.")
 

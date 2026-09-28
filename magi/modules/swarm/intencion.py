@@ -65,6 +65,14 @@ APROBACION = {
 #: seguir adelante.
 APROBACION_SOLAS = {"continua", "sigue", "seguimos", "next"}
 
+#: Palabras que APRUEBAN cuando MANDAN la primera palabra de una frase larga
+#: (v5.29, regla 2c de es_respuesta_a_aprobacion). Es APROBACION sin los
+#: verbos que lideran encargos con naturalidad: «dale caña al render», «go
+#: fetch», «ejecuta los tests y dime». Y SIN las SOLAS: «sigue así de lento»
+#: ya mordió una vez como queja; solo aprueban si son el mensaje entero.
+APROBACION_CABEZA = APROBACION - {"dale", "go", "hazlo", "ejecuta",
+                                  "ejecutalo"}
+
 #: Rechazo o petición de otra ronda. También es una respuesta a la propuesta.
 RECHAZO = {
     "no", "nop", "nope", "rechazo", "rechazado", "cancela", "cancelar",
@@ -156,6 +164,17 @@ def es_respuesta_a_aprobacion(texto: str) -> bool:
     # que sea («oye naoko», «naoko ayuda»).
     if "naoko" in palabras:
         return False
+
+    # 2c (v5.29): la aprobación empieza hablando de aprobar. Medido en la
+    # auditoría del Tetris: «sí, apruebo: continúa con la siguiente ronda
+    # del plan vivo» (>3 palabras) caía a tarea NUEVA y la pendiente quedaba
+    # zombi — tres tareas de basura y ~20 minutos de bloqueo. Si la PRIMERA
+    # palabra es aprobación o rechazo inequívoco y ningún verbo de encargo
+    # manda la frase (regla 2, ya pasada), es una respuesta a lo pendiente.
+    # El encargo que EMPIEZA con «dale/sí» coloquial asume el coste: es
+    # mucho más caro el zombi que la absorción.
+    if palabras[0] in APROBACION_CABEZA or palabras[0] in RECHAZO:
+        return True
 
     # 3. Pedir un cambio SOBRE lo propuesto sí es responder. Pero el verbo
     #    de revisión tiene que MANDAR la frase —en la cabeza o en un mensaje

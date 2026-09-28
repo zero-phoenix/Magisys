@@ -77,11 +77,16 @@ TECHOS: dict[str, int] = {
     # de atenderle. Ahora hay tregua de arranque, `_enjambre_ocupado()` cuenta
     # también lo encolado y lo que espera en admisión, y se vuelve a mirar
     # justo antes de gastar.
-    "magi/core/kernel.py": 1070,
+    # +26 en la v5.29 (megaplan autonomía): sys.config expone y fija el nivel
+    # de autonomía por RPC y arranca la segadora de zombis periódica.
+    "magi/core/kernel.py": 1100,
     # +48 en la v5.5.2: el filtro de idioma que se le inyecta a Yqcloud por
     # API (responde en chino cuando le apetece) y el catálogo de la familia
     # `gpt` con WeWordle de vuelta, cada entrada con el motivo escrito.
-    "magi/core/providers/backends/g4f_backend.py": 1050,
+    # +5 en la v5.29: cada candidato upstream emite su medida real
+    # (emit_provider_metric) y el breaker de calidad saca de rotación al que
+    # responde basura dos veces seguidas — el router ya no vuela a ciegas.
+    "magi/core/providers/backends/g4f_backend.py": 1080,
     "magi/core/sesion_web.py": 910,
     # +68 en la v5.5.2: presupuesto por tarea (contador, cierre por techo y
     # rehidratación), fan-out por motor y el candado que serializa el
@@ -110,7 +115,11 @@ TECHOS: dict[str, int] = {
     #
     # La lógica pesada vive en `aceptacion.py` y `caja_de_herramientas.py`,
     # que son módulos nuevos; lo que se queda aquí es el cableado y el porqué.
-    "magi/modules/swarm/orchestrator.py": 1550,
+    # +55 en la v5.29 (megaplan autonomía): auto-aprobación según política de
+    # riesgo reutilizando el camino del "SI" (swarm.autoapproved auditable) y
+    # segadora de zombis. El mapa de extensiones y el auto-chequeo de los
+    # bloques auto-exec viven en artifactos.py (módulo nuevo).
+    "magi/modules/swarm/orchestrator.py": 1610,
 }
 
 #: Para todo lo demás. 800 líneas es mucho para un módulo de Python, y ninguno

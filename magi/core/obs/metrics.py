@@ -29,6 +29,29 @@ logger = logging.getLogger(__name__)
 WINDOW = 200          # muestras por serie
 ALERT_COOLDOWN_S = 300.0
 
+# ------------------------------------------------------------------ emisión
+# Los backends NO conocen el bus ni el kernel: publican su medida con esta
+# función de módulo y el colector vivo la recoge. Si no hay kernel (tests,
+# uso como librería), es un no-op barato. Este gancho es lo que faltaba para
+# que `obs.metrics.providers` dejara de estar vacío: `record_provider` existía
+# y nadie lo llamaba.
+
+_colector: "MetricsCollector | None" = None
+
+
+def emit_provider_metric(provider: str, latency_ms: float, ok: bool,
+                         family: str = "") -> None:
+    """Publica una medida real de llamada a proveedor hacia el colector."""
+    if _colector is None:
+        return
+    try:
+        _colector.record_provider(provider, latency_ms, ok)
+        if not ok:
+            logger.info("[obs] proveedor '%s' (familia %s) marcado con fallo",
+                        provider, family or "?")
+    except Exception as e:  # noqa: BLE001 — telemetría nunca propaga
+        logger.debug("[obs] emit_provider_metric falló: %s", e)
+
 
 @dataclass
 class Series:
@@ -132,6 +155,37 @@ class MetricsCollector:
         self._last_alert: dict[str, float] = {}
         self.started_at = time.time()
 
+        global _colector
+        _colector = self
+        self._guardar_en = 0.0
+        self._cargar_persistidas()
+
+    # ------------------------------------------------------------ persistencia
+
+    def _cargar_persistidas(self) -> None:
+        """Rehidrata las medidas de la sesión anterior (Fase 1 v5.29)."""
+        from magi.core.obs import store
+        for proveedor, d in (store.cargar_provider_stats() or {}).items():
+            try:
+                c = self.provider_calls[proveedor]
+                c.ok += int(d.get("n_ok", 0))
+                c.fail += int(d.get("n_fail", 0))
+                p50 = float(d.get("p50_ema", 0.0))
+                if p50 > 0:
+                    self.provider_latency[proveedor].add(p50)
+            except Exception:
+                continue
+
+    def _persistir(self) -> None:
+        from magi.core.obs import store
+        stats = {}
+        for p, c in self.provider_calls.items():
+            s = self.provider_latency.get(p)
+            stats[p] = {"n_ok": c.ok, "n_fail": c.fail,
+                        "p50_ema": round(s.p50, 1) if s and s.n else 0.0,
+                        "p95_ema": round(s.p95, 1) if s and s.n else 0.0}
+        store.guardar_provider_stats(stats)
+
     # ------------------------------------------------------------ suscripción
 
     def attach(self, bus) -> None:
@@ -165,6 +219,12 @@ class MetricsCollector:
         self.provider_calls[provider].record(ok)
         if ok and latency_ms > 0:
             self.provider_latency[provider].add(latency_ms)
+        # Persistencia con freno: como mucho cada 30 s, jamás en el camino
+        # crítico de una respuesta.
+        now = time.monotonic()
+        if now >= self._guardar_en:
+            self._guardar_en = now + 30.0
+            self._persistir()
         return self._check_provider(provider)
 
     def record_tool(self, tool: str, ok: bool) -> list[Alert]:

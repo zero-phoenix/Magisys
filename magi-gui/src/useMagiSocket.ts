@@ -123,6 +123,10 @@ export function useMagiSocket(port: number = 20128) {
                 });
               } else if (topic === 'TERMINAL_OUT') {
                 appendTerminal(payload.content || payload.message || String(payload));
+              } else if (topic === 'swarm.autoapproved') {
+                // v5.29 — la política de riesgo aprobó la ronda sola: en la
+                // terminal, no en silencio. El humano siempre puede parar.
+                appendTerminal(`[AUTONOMÍA] ${payload.task_id || ''} continúa sola (nivel ${payload.nivel || 'total'}).`);
               } else if (topic === 'naoko.log') {
                 useMagiStore.getState().addNaokoMessage({
                   id: Math.random().toString(36),

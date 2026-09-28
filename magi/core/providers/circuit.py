@@ -83,3 +83,55 @@ class CircuitBreaker:
             "p50_ms": round(self.p50_ms(), 1),
             "p95_ms": round(self.p95_ms(), 1),
         }
+
+
+class CalidadBreaker:
+    """
+    Corta por CALIDAD de respuesta, candidato a candidato (v5.29 Fase 2).
+
+    El CircuitBreaker de arriba corta por EXCEPCIONES a nivel de familia;
+    esto corta cuando un candidato upstream CONTESTA BASURA ("tud.", 4
+    caracteres) o falla seguido: dos fallos consecutivos → ABIERTO (no
+    recibe tráfico), ventana de semapertura a los `ventana_s` — una
+    oportunidad de probar, y si vuelve a fallar re-abre. El éxito resetea.
+    """
+
+    def __init__(self, umbral: int = 2, ventana_s: float = 600.0):
+        self.umbral = umbral
+        self.ventana_s = ventana_s
+        self._fallos: dict[str, int] = {}
+        self._abierto_hasta: dict[str, float] = {}
+
+    def exito(self, nombre: str) -> None:
+        self._fallos.pop(nombre, None)
+        self._abierto_hasta.pop(nombre, None)
+
+    def fallo(self, nombre: str, now: float | None = None) -> str:
+        """Registra fallo; devuelve el estado resultante del candidato."""
+        now = now if now is not None else time.monotonic()
+        f = self._fallos.get(nombre, 0) + 1
+        self._fallos[nombre] = f
+        if f >= self.umbral:
+            self._abierto_hasta[nombre] = now + self.ventana_s
+            return "ABIERTO"
+        return "CERRADO"
+
+    def permite(self, nombre: str, now: float | None = None) -> bool:
+        now = now if now is not None else time.monotonic()
+        hasta = self._abierto_hasta.get(nombre)
+        if hasta is None:
+            return True
+        if now >= hasta:
+            return True          # semiapertura: una oportunidad de probar
+        return False
+
+    def estado(self, nombre: str, now: float | None = None) -> str:
+        now = now if now is not None else time.monotonic()
+        hasta = self._abierto_hasta.get(nombre)
+        if hasta is None:
+            return "CERRADO"
+        return "ABIERTO" if now < hasta else "SEMIABIERTO"
+
+    def snapshot(self) -> dict[str, str]:
+        return {n: self.estado(n) for n in
+                set(self._fallos) | set(self._abierto_hasta)}
