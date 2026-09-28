@@ -76,3 +76,4 @@ generated_media/
 # Entorno aislado para comprobar que el lock produce un binario que funciona
 # (scripts/verificar.py y publicar.py lo explican). Se regenera cuando haga falta.
 .venv-lock/
+groq_key.txt

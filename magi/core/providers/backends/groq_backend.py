@@ -33,12 +33,13 @@ El catálogo de modelos se puede sobreescribir con GROQ_MODELS
 Groq cambian sin avisar, y un catálogo hardcodeado es un binario roto esperando
 su turno. La lista de aquí abajo es el valor por defecto verificado.
 
-LA CLAVE (decisión del propietario, 2026-09-27): se lee del entorno
-GROQ_API_KEY y, si no está, de magi/data/groq_key.txt — fichero que vive en el
-repositorio POR DECISIÓN EXPLÍCITA del dueño (el repo pasa a privado al cierre
-de cada ciclo de trabajo). El exe publicado la lleva dentro y funciona en
-cualquier PC sin configurar nada. Para rotarla: cambia el fichero (o pon la
-variable de entorno, que SIEMPRE gana) y re-publica.
+LA CLAVE (decisión del propietario, 2026-09-28): NINGUNA clave vive en el
+repositorio. Se lee de la variable de entorno GROQ_API_KEY (persistente en la
+máquina: `setx GROQ_API_KEY ...` en Windows) y, como cortesía local opcional,
+de magi/data/groq_key.txt — fichero que NO se commitea (ver
+groq_key.txt.example); cada quien lo crea en su máquina si prefiere fichero a
+entorno. Sin clave no hay subagentes Groq: el enjambre cae a g4f y el selftest
+lo dice, no lo esconde.
 """
 from __future__ import annotations
 
@@ -65,7 +66,8 @@ logger = logging.getLogger(__name__)
 API_BASE = "https://api.groq.com/openai/v1"
 API_KEY_ENV = "GROQ_API_KEY"
 
-#: Fichero de clave del repo (viaja dentro del exe: magi/data se empaqueta).
+#: Fichero de clave LOCAL y opcional (jamás commiteado; ver
+#: groq_key.txt.example). El entorno GROQ_API_KEY SIEMPRE gana.
 #: `Path(__file__)` = magi/core/providers/backends/ → tres padres = magi/.
 _RUTA_CLAVE = Path(__file__).resolve().parents[3] / "data" / "groq_key.txt"
 

@@ -211,12 +211,11 @@ jobs:
       # igual en cada release (MAGI-IDE-v5.zip) y no distinguía nada.
       run: |
         $z = "dist/Magisys-v$env:VERSION-win64.zip"
-        # La clave Groq viaja en el zip como magi/data/groq_key.txt: rotable
-        # sin recompilar y probada por la compuerta del release. Su contenido
-        # jamás se imprime.
-        New-Item -ItemType Directory -Force -Path "dist/magi/data" | Out-Null
-        Copy-Item "magi/data/groq_key.txt" "dist/magi/data/groq_key.txt"
-        Compress-Archive -Path "dist/Magisys.exe","dist/magi" -DestinationPath $z -Force
+        # NINGUNA clave dentro del zip (decisión del dueño, 2026-09-28): el
+        # subagente Groq se activa con la variable de entorno GROQ_API_KEY
+        # de cada máquina. Sin ella, el enjambre cae a g4f y el selftest lo
+        # declara en su informe.
+        Compress-Archive -Path "dist/Magisys.exe" -DestinationPath $z -Force
         $mb = [math]::Round((Get-Item $z).Length / 1MB, 1)
         Write-Host "zip: $mb MB -> $z"
 

@@ -1,0 +1,3 @@
+# Plantilla: copia este fichero como groq_key.txt y pega TU clave.
+# groq_key.txt esta en .gitignore: JAMAS se commitea. La via preferida es
+# la variable de entorno persistente (Windows: setx GROQ_API_KEY "gsk_...").
