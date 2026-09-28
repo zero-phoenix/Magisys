@@ -1522,9 +1522,13 @@ class SwarmOrchestrator:
                                  f"{_autonomia.nivel()}): {task_id} continúa "
                                  f"sola, sin aprobación humana."}))
                     self._persist(task_id)
-                    await self._despachar(task_id, "SI", engine,
-                                          narrative_style, route, max_rounds,
-                                          use_tools)
+                    await self._despachar(
+                        task_id, "SI",
+                        state.get("engine", "fast"),
+                        state.get("narrative_style", "tecnico"),
+                        state.get("route", "task"),
+                        state.get("max_rounds", 3),
+                        state.get("use_tools", True))
                     break
 
                 await self._publish_approval(task_id, state, verdict)
