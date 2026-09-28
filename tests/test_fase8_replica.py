@@ -38,6 +38,15 @@ from magi.core.store.state import TaskStore
 from magi.modules.swarm import replica
 from magi.modules.swarm.orchestrator import SwarmOrchestrator
 
+
+@pytest.fixture(autouse=True)
+def _autonomia_manual(monkeypatch):
+    """Este fichero prueba el MECANISMO del debate, no la autonomía (v5.29).
+    Con el default `supervisada`, las rondas sin comandos se auto-aprueban y
+    el enjambre gastaría arbitrajes que aquí se cuentan uno a uno."""
+    from magi.core import autonomia
+    monkeypatch.setattr(autonomia, "_actual", "manual")
+
 # ------------------------------------------------------------ unidad pura
 
 def test_contar_objeciones_solo_cuenta_firmas():
